@@ -1,19 +1,27 @@
 """
-Background resolution pipeline — now with pre-dispatch correlation.
+Background resolution pipeline — pre-dispatch correlation + classifier-aware agent.
 
 Execution order
 ---------------
-1. Mark ticket PROCESSING
-2. Index ticket into Chroma (so it's searchable immediately)
-3. Run CorrelationEngine (alarm check + maintenance check + similarity + SOPs) — all parallel
-4. Short-circuit to HOLD if alarm is cleared OR node is in maintenance
-5. Otherwise: invoke ResolutionAgent (LLM) with full CorrelationContext
-6. Persist DispatchDecision and mark ticket RESOLVED / FAILED
+1. Mark ticket IN_PROGRESS
+2. Index ticket into Chroma using the telco-aware document builder
+   (preserves alarm_name, network_type, resolution fields)
+3. Run FaultClassifier + CorrelationEngine concurrently
+   - Classifier: Anthropic Claude tool-call → fault_type + confidence + affected_layer
+   - Correlation: alarm check + maintenance check + similar tickets + SOP candidates
+4. Short-circuit to HOLD if alarm cleared OR node is in maintenance (skip LLM)
+5. Otherwise: run ResolutionAgent with both classifier result and correlation context
+   → ranked SOPs + natural language summary + dispatch decision
+6. Persist DispatchDecision; mark ticket RESOLVED or FAILED on error
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from typing import Optional
 
+from app.classifier.classifier import FaultClassifier
+from app.classifier.models import ClassificationResult
 from app.correlation.engine import CorrelationEngine
 from app.correlation.models import DispatchDecision
 from app.matching.engine import MatchingEngine
@@ -31,35 +39,60 @@ async def run_telco_resolution_pipeline(
     correlation_engine: CorrelationEngine,
     agent: ResolutionAgent,
     repo: TelcoTicketRepository,
+    fault_classifier: Optional[FaultClassifier] = None,
 ) -> None:
     """
-    Full pre-dispatch correlation + LLM resolution pipeline.
+    Full pre-dispatch correlation + LLM resolution pipeline for telco tickets.
 
-    Short-circuit path (no LLM call):
-      alarm cleared     → DispatchDecision.HOLD
-      in maintenance    → DispatchDecision.HOLD
+    Short-circuit path (no LLM agent call):
+      alarm CLEARED       → DispatchDecision.HOLD
+      node IN MAINTENANCE → DispatchDecision.HOLD
 
-    Normal path (LLM call):
+    Normal path (LLM agent call):
       → DispatchDecision.REMOTE | ON_SITE | ESCALATE
+      Classifier output (fault_type + confidence) is injected into the agent
+      prompt so the ranked SOP selection is anchored to the classifier's verdict.
     """
     try:
         await repo.update_status(ticket_id, TelcoTicketStatus.IN_PROGRESS)
 
-        # Step 1 — index ticket into vector store so similarity search works for it too
-        from app.models.ticket import TicketIn, TicketPriority
-        generic = TicketIn(
-            source="telco",
-            title=ticket.affected_node + " — " + ticket.fault_type.value,
-            description=ticket.description,
-            priority=TicketPriority(ticket.severity.value),
-            category=ticket.fault_type.value,
-        )
-        await matching_engine.index_ticket(ticket_id, generic)
+        # ----------------------------------------------------------------
+        # Step 1 — index ticket into Chroma using the telco document builder.
+        #
+        # index_telco_ticket() preserves alarm_name, alarm_category,
+        # network_type, primary_cause, and resolution fields in the
+        # embedded document — the generic index_ticket() loses all of these.
+        # ----------------------------------------------------------------
+        await matching_engine.index_telco_ticket(ticket_id, ticket, resolved=False)
 
-        # Step 2 — run all pre-dispatch checks concurrently
-        ctx = await correlation_engine.correlate(ticket)
+        # ----------------------------------------------------------------
+        # Step 2 — run classifier + correlation concurrently.
+        #
+        # Both are independent at this point:
+        #   - FaultClassifier hits Anthropic API + does its own Chroma queries
+        #   - CorrelationEngine runs alarm check, maintenance check, similarity
+        #     search, and SOP retrieval — all four in parallel internally
+        # ----------------------------------------------------------------
+        classifier_result: Optional[ClassificationResult] = None
 
-        # Step 3 — short-circuit if alarm cleared or in maintenance
+        if fault_classifier is not None:
+            classifier_task = asyncio.create_task(
+                _run_classifier(fault_classifier, ticket)
+            )
+            ctx = await correlation_engine.correlate(ticket)
+            classifier_result = await classifier_task
+        else:
+            log.warning(
+                "FaultClassifier not provided for ticket %s — "
+                "agent will infer fault type from description only.",
+                ticket_id,
+            )
+            ctx = await correlation_engine.correlate(ticket)
+
+        # ----------------------------------------------------------------
+        # Step 3 — short-circuit: alarm cleared or node in maintenance.
+        # No LLM call needed; confidence is 1.0 by definition.
+        # ----------------------------------------------------------------
         if ctx.should_short_circuit:
             log.info(
                 "Short-circuit HOLD for ticket %s — reason: %s",
@@ -70,23 +103,53 @@ async def run_telco_resolution_pipeline(
             await repo.update_status(ticket_id, TelcoTicketStatus.RESOLVED)
             return
 
-        # Step 4 — run the LLM agent with full correlation context
-        decision = await agent.resolve(ticket, ticket_id=ticket_id, correlation_ctx=ctx)
+        # ----------------------------------------------------------------
+        # Step 4 — run the LLM agent with full context.
+        #
+        # Both classifier_result and correlation_ctx are passed so:
+        #   • The prompt shows the classifier's fault_type + confidence
+        #     alongside the pre-ranked candidate SOPs and similar tickets
+        #   • The agent can anchor its ranked_sops output to the classifier
+        #     verdict instead of re-deriving the fault type from scratch
+        # ----------------------------------------------------------------
+        decision = await agent.resolve(
+            ticket,
+            ticket_id=ticket_id,
+            correlation_ctx=ctx,
+            classifier_result=classifier_result,
+        )
         await repo.save_dispatch_decision(ticket_id, decision)
         await repo.update_status(ticket_id, TelcoTicketStatus.RESOLVED)
 
         log.info(
-            "Pipeline complete — ticket=%s dispatch=%s confidence=%.2f escalation=%s short_circuit=%s",
+            "Pipeline complete — ticket=%s dispatch=%s confidence=%.2f "
+            "escalation=%s ranked_sops=%d short_circuit=%s",
             ticket_id,
             decision.dispatch_mode.value,
             decision.confidence_score,
             decision.escalation_required,
+            len(decision.ranked_sops),
             decision.short_circuited,
         )
 
     except Exception as exc:
         log.error("Telco pipeline failed for ticket %s: %s", ticket_id, exc, exc_info=True)
         await repo.update_status(ticket_id, TelcoTicketStatus.FAILED)
+
+
+async def _run_classifier(
+    classifier: FaultClassifier,
+    ticket: TelcoTicketCreate,
+) -> Optional[ClassificationResult]:
+    """Run the fault classifier, returning None on failure (pipeline continues)."""
+    try:
+        return await classifier.classify(ticket.description)
+    except Exception as exc:
+        log.warning(
+            "FaultClassifier failed for node %s — continuing without classifier output: %s",
+            ticket.affected_node, exc,
+        )
+        return None
 
 
 # Preserve the original generic pipeline for non-telco tickets

@@ -83,6 +83,7 @@ class TelcoTicketStatus(str, Enum):
     RESOLVED    = "resolved"
     CLOSED      = "closed"
     ESCALATED   = "escalated"
+    FAILED      = "failed"      # internal: pipeline error during processing
 
 
 class NetworkType(str, Enum):
