@@ -29,6 +29,9 @@ dependencies = [
     # Local embeddings
     "sentence-transformers>=3.0.0",
 
+    # Anthropic Claude API (fault classifier)
+    "anthropic>=0.40.0",
+
     # Database (async)
     "sqlmodel>=0.0.21",
     "aiosqlite>=0.20.0",

@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "sk-placeholder"
     LLM_MODEL: str = "gpt-4o"
 
+    # Anthropic / Claude (used by FaultClassifier)
+    ANTHROPIC_API_KEY: str = "sk-ant-placeholder"
+    CLASSIFIER_MODEL: str = "claude-sonnet-4-6"
+    CLASSIFIER_SIMILAR_TOP_K: int = 3
+
     # Embedding backend — "sentence_transformers" (local) or "openai" (API)
     EMBEDDING_BACKEND: str = "sentence_transformers"
 

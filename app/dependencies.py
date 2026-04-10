@@ -6,7 +6,10 @@ from fastapi import Depends, Request
 from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import anthropic
+
 from app.alarms.checker import AlarmChecker
+from app.classifier.classifier import FaultClassifier
 from app.alarms.store import AlarmStore
 from app.config import Settings, get_settings
 from app.correlation.engine import CorrelationEngine
@@ -193,6 +196,26 @@ async def get_maintenance_checker(
 # ---------------------------------------------------------------------------
 # Correlation engine
 # ---------------------------------------------------------------------------
+
+def get_fault_classifier(
+    settings: SettingsDep,
+    matching_engine: Annotated[MatchingEngine, Depends(get_matching_engine)],
+) -> FaultClassifier:
+    """
+    Provides a FaultClassifier backed by the Anthropic Claude API.
+
+    The Anthropic AsyncAnthropic client is constructed per-request (lightweight —
+    it holds no persistent connection).  The matching_engine is reused from the
+    existing dependency chain for Chroma similarity search.
+    """
+    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return FaultClassifier(
+        client=client,
+        matching_engine=matching_engine,
+        model=settings.CLASSIFIER_MODEL,
+        similar_top_k=settings.CLASSIFIER_SIMILAR_TOP_K,
+    )
+
 
 async def get_correlation_engine(
     alarm_checker: Annotated[AlarmChecker, Depends(get_alarm_checker)],
