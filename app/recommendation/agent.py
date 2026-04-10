@@ -1,11 +1,18 @@
 """
 ResolutionAgent — LangChain tool-calling agent for telco ticket resolution.
 
-Updated to:
-  • Accept a CorrelationContext assembled by CorrelationEngine
-  • Inject correlation context into the LLM prompt as structured text
-  • Use five tools (3 pre-dispatch + 2 research)
-  • Produce a DispatchDecision instead of the generic RecommendationResult
+Produces a DispatchDecision that includes:
+  • dispatch_mode          (remote / on_site / hold / escalate)
+  • recommended_steps      (ordered action list)
+  • ranked_sops            (top 2–3 SOPs with confidence scores)
+  • natural_language_summary (human-readable NOC engineer summary)
+  • reasoning              (evidence-based explanation)
+
+Inputs injected into the prompt:
+  • TelcoTicketCreate           — the ticket being resolved
+  • ClassificationResult | None — fault classifier output (fault_type + confidence)
+  • CorrelationContext | None   — pre-assembled alarm, maintenance, remote-feasibility data
+                                  including pre-ranked candidate SOPs and similar tickets
 """
 from __future__ import annotations
 
@@ -15,25 +22,44 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
+from app.classifier.models import ClassificationResult
 from app.correlation.models import CorrelationContext, DispatchDecision, DispatchMode
 from app.matching.engine import MatchingEngine
 from app.models.telco_ticket import TelcoTicketCreate
 from app.recommendation.chains import build_structuring_chain
 from app.recommendation.output_parser import parse_agent_output
-from app.recommendation.prompts import SYSTEM_PROMPT, TELCO_CONTEXT_TEMPLATE
+from app.recommendation.prompts import (
+    SYSTEM_PROMPT,
+    TELCO_CONTEXT_TEMPLATE,
+    _fmt_candidate_sops,
+    _fmt_classifier,
+    _fmt_matched_tickets,
+)
 from app.recommendation.tools import build_agent_tools
 from app.sop.retriever import SOPRetriever
 
 log = logging.getLogger(__name__)
+
+_DISPATCH_MODE_MAP: dict[str, DispatchMode] = {
+    "remote":    DispatchMode.REMOTE,
+    "on_site":   DispatchMode.ON_SITE,
+    "on-site":   DispatchMode.ON_SITE,
+    "hold":      DispatchMode.HOLD,
+    "escalate":  DispatchMode.ESCALATE,
+}
 
 
 class ResolutionAgent:
     """
     Tool-calling LangChain agent that produces a DispatchDecision.
 
-    The agent receives a pre-assembled CorrelationContext (alarm state,
-    maintenance window, remote feasibility) and uses five tools to
-    reach a final remote vs on-site recommendation.
+    The agent receives:
+      - A pre-assembled CorrelationContext (alarm state, maintenance window, remote
+        feasibility, candidate SOPs, similar tickets).
+      - An optional ClassificationResult from the fault classifier.
+
+    It uses five tools to reach a final recommendation, produces a ranked SOP list,
+    and writes a natural-language summary for the NOC engineer.
     """
 
     def __init__(
@@ -72,12 +98,18 @@ class ResolutionAgent:
         self,
         ticket: TelcoTicketCreate,
         correlation_ctx: CorrelationContext | None,
+        classifier_result: ClassificationResult | None,
     ) -> str:
         corr_block = (
             correlation_ctx.as_agent_context_str()
             if correlation_ctx
             else "(No pre-dispatch context available — use tools to gather information.)"
         )
+
+        # Pre-fetched similar tickets and candidate SOPs from the correlation context
+        similar_tickets = correlation_ctx.similar_tickets if correlation_ctx else []
+        sop_matches     = correlation_ctx.sop_matches     if correlation_ctx else []
+
         return TELCO_CONTEXT_TEMPLATE.format(
             ticket_id=ticket.ticket_id,
             fault_type=ticket.fault_type.value,
@@ -86,6 +118,9 @@ class ResolutionAgent:
             description=ticket.description[:800],
             sop_id=ticket.sop_id or "None",
             timestamp=ticket.timestamp.isoformat(),
+            classifier_block=_fmt_classifier(classifier_result),
+            matched_tickets_block=_fmt_matched_tickets(similar_tickets),
+            candidate_sops_block=_fmt_candidate_sops(sop_matches),
             correlation_context=corr_block,
         )
 
@@ -94,9 +129,27 @@ class ResolutionAgent:
         ticket: TelcoTicketCreate,
         ticket_id: str = "",
         correlation_ctx: CorrelationContext | None = None,
+        classifier_result: ClassificationResult | None = None,
     ) -> DispatchDecision:
+        """
+        Run the agent and return a DispatchDecision.
+
+        Parameters
+        ----------
+        ticket:
+            The telco ticket to resolve.
+        ticket_id:
+            Persisted ticket ID (may differ from ticket.ticket_id if reassigned).
+        correlation_ctx:
+            Pre-assembled context from CorrelationEngine — alarm state, maintenance
+            window, remote feasibility, candidate SOPs, similar tickets.
+        classifier_result:
+            Output of FaultClassifier.classify() for this ticket. When provided,
+            the classifier's fault_type and confidence are injected into the prompt
+            so the agent can leverage them without re-deriving from the description.
+        """
         executor = self._build_executor(correlation_ctx)
-        context  = self._build_context(ticket, correlation_ctx)
+        context  = self._build_context(ticket, correlation_ctx, classifier_result)
 
         try:
             raw = await executor.ainvoke({"ticket_context": context})
@@ -107,7 +160,7 @@ class ResolutionAgent:
 
         result = parse_agent_output(output_text, ticket, ticket_id, correlation_ctx)
 
-        # Fallback: if steps missing, run structuring chain
+        # Fallback: if steps are missing, run the structuring chain
         if not result.recommended_steps and output_text:
             log.warning("Primary parse returned no steps; running structuring chain fallback")
             try:
@@ -125,6 +178,8 @@ class ResolutionAgent:
                     escalation_required=bool(structured.get("escalation_required", False)),
                     relevant_sops=structured.get("relevant_sops", []),
                     similar_ticket_ids=structured.get("similar_ticket_ids", []),
+                    natural_language_summary=structured.get("natural_language_summary", ""),
+                    ranked_sops=[],
                     alarm_check=correlation_ctx.alarm_check if correlation_ctx else None,
                     maintenance_check=correlation_ctx.maintenance_check if correlation_ctx else None,
                 )
@@ -132,14 +187,3 @@ class ResolutionAgent:
                 log.error("Structuring chain also failed: %s", exc)
 
         return result
-
-
-# Keep the dispatch mode map accessible for the fallback path above
-from app.correlation.models import DispatchMode  # noqa: E402
-_DISPATCH_MODE_MAP: dict[str, DispatchMode] = {
-    "remote":    DispatchMode.REMOTE,
-    "on_site":   DispatchMode.ON_SITE,
-    "on-site":   DispatchMode.ON_SITE,
-    "hold":      DispatchMode.HOLD,
-    "escalate":  DispatchMode.ESCALATE,
-}

@@ -10,6 +10,19 @@ class SimilarTicket(BaseModel):
     resolution_summary: Optional[str] = None
 
 
+class RankedSOP(BaseModel):
+    """
+    A Standard Operating Procedure ranked by relevance to a specific ticket.
+    Produced by the recommendation agent after retrieving and scoring candidates.
+    """
+    sop_id:           str
+    title:            str
+    confidence_score: float = Field(ge=0.0, le=1.0, description="Relevance confidence 0–1")
+    summary:          str   = Field(default="", description="One-sentence abstract of what the SOP resolves")
+    match_reason:     str   = Field(default="", description="Why this SOP was ranked at this position")
+    on_site_required: bool  = False
+
+
 class TicketEmbeddingResult(BaseModel):
     """
     Output of TicketEmbeddingPipeline.run().

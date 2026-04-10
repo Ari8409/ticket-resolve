@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.alarms.models import AlarmCheckResult
 from app.maintenance.models import MaintenanceCheckResult
-from app.models.recommendation import SimilarTicket, SOPMatch
+from app.models.recommendation import RankedSOP, SimilarTicket, SOPMatch
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,21 @@ class DispatchDecision(BaseModel):
     reasoning:           str                    = ""
     escalation_required: bool                   = False
 
+    # Natural language summary for NOC engineers (human-readable)
+    natural_language_summary: str = Field(
+        default="",
+        description=(
+            "2-4 sentence human-readable summary of the fault, alarm state, "
+            "dispatch decision, and recommended actions. Written for a NOC engineer."
+        ),
+    )
+
+    # SOPs ranked by confidence (top 2-3, scored and explained)
+    ranked_sops: list[RankedSOP] = Field(
+        default_factory=list,
+        description="SOPs ranked by relevance confidence, highest first.",
+    )
+
     # Correlation evidence
     alarm_check:         Optional[AlarmCheckResult]       = None
     maintenance_check:   Optional[MaintenanceCheckResult] = None
@@ -225,18 +240,35 @@ class DispatchDecision(BaseModel):
     @classmethod
     def hold_from_context(cls, ticket_id: str, ctx: CorrelationContext) -> "DispatchDecision":
         """Construct a HOLD decision directly from correlation context (no LLM needed)."""
+        if ctx.alarm_check.dispatch_blocked:
+            steps = [
+                "Monitor alarm state in NMS.",
+                "Close ticket automatically if alarm remains cleared for 30 minutes.",
+            ]
+            summary = (
+                f"The alarm on node {ctx.affected_node} has already CLEARED in NMS — "
+                f"no physical intervention is required. "
+                f"Continue monitoring and auto-close if the alarm stays clear for 30 minutes. "
+                f"Dispatch is HELD: {ctx.alarm_check.summary}"
+            )
+        else:
+            steps = [
+                "Coordinate with maintenance team.",
+                "Re-evaluate after maintenance window closes.",
+            ]
+            summary = (
+                f"Node {ctx.affected_node} is currently within a planned maintenance window. "
+                f"The maintenance team is responsible for this fault. "
+                f"Do not dispatch a second crew — coordinate with the maintenance contact. "
+                f"Dispatch is HELD: {ctx.maintenance_check.summary}"
+            )
         return cls(
             ticket_id=ticket_id,
             dispatch_mode=DispatchMode.HOLD,
             confidence_score=1.0,
             reasoning=ctx.short_circuit_reason,
-            recommended_steps=[
-                "Monitor alarm state in NMS.",
-                "Close ticket automatically if alarm remains cleared for 30 minutes.",
-            ] if ctx.alarm_check.dispatch_blocked else [
-                "Coordinate with maintenance team.",
-                "Re-evaluate after maintenance window closes.",
-            ],
+            recommended_steps=steps,
+            natural_language_summary=summary,
             alarm_check=ctx.alarm_check,
             maintenance_check=ctx.maintenance_check,
             short_circuited=True,
