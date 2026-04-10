@@ -21,6 +21,8 @@ from app.matching.pipeline import TicketEmbeddingPipeline
 from app.matching.st_embedder import SentenceTransformerEmbedder
 from app.matching.ticket_store import TicketStore
 from app.recommendation.agent import ResolutionAgent
+from app.review.feedback import ResolutionFeedbackIndexer
+from app.review.handler import ReviewHandler
 from app.sop.retriever import SOPRetriever
 from app.sop.sop_store import SOPStore
 from app.storage.repositories import TicketRepository, get_session
@@ -218,6 +220,26 @@ def get_fault_classifier(
         sop_retriever=sop_retriever,
         model=settings.CLASSIFIER_MODEL,
         similar_top_k=settings.CLASSIFIER_SIMILAR_TOP_K,
+    )
+
+
+async def get_review_handler(
+    repo: Annotated[TelcoTicketRepository, Depends(get_telco_repo)],
+    sop_retriever: Annotated[SOPRetriever, Depends(get_sop_retriever)],
+    matching_engine: Annotated[MatchingEngine, Depends(get_matching_engine)],
+) -> ReviewHandler:
+    """
+    Provides a ReviewHandler wired with the telco repo, SOP retriever, and
+    the Chroma feedback indexer.
+
+    The feedback indexer uses MatchingEngine so that resolved tickets are
+    embedded with the same model used for incoming ticket queries.
+    """
+    feedback_indexer = ResolutionFeedbackIndexer(matching_engine=matching_engine)
+    return ReviewHandler(
+        repo=repo,
+        sop_retriever=sop_retriever,
+        feedback_indexer=feedback_indexer,
     )
 
 

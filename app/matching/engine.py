@@ -118,3 +118,60 @@ class MatchingEngine:
     ) -> list[SimilarTicket]:
         doc = self._make_document(ticket)
         return await self.find_similar(doc, top_k)
+
+    # ------------------------------------------------------------------
+    # Telco-specific indexing (TelcoTicketCreate)
+    # ------------------------------------------------------------------
+
+    def _make_telco_document(self, ticket) -> str:
+        """
+        Build the vector-store document text for a TelcoTicketCreate.
+
+        The document is structured to surface the most distinctive fields
+        for similarity matching: alarm name, node, fault type, description,
+        and resolution details (for resolved tickets).
+        """
+        parts = [
+            ticket.alarm_name or ticket.fault_type.value.replace("_", " ").title(),
+            f"Node: {ticket.affected_node}",
+            f"Fault: {ticket.fault_type.value}",
+        ]
+        if ticket.network_type:
+            parts.append(f"Network: {ticket.network_type}")
+        if ticket.alarm_category:
+            parts.append(f"Category: {ticket.alarm_category}")
+        parts.append(ticket.description)
+        if ticket.primary_cause:
+            parts.append(f"Primary Cause: {ticket.primary_cause}")
+        if ticket.resolution:
+            parts.append(f"Resolution: {ticket.resolution}")
+        if ticket.resolution_code:
+            parts.append(f"Resolution Code: {ticket.resolution_code}")
+        return "\n".join(parts)
+
+    async def index_telco_ticket(
+        self,
+        ticket_id: str,
+        ticket,
+        resolution_summary: Optional[str] = None,
+        resolved: bool = False,
+    ) -> None:
+        """
+        Embed and upsert a TelcoTicketCreate into the vector store.
+
+        Pass ``resolved=True`` when the ticket has been fully resolved so it
+        becomes eligible for ``find_similar_resolved`` training-signal queries.
+        """
+        doc = self._make_telco_document(ticket)
+        embedding = await self._embedder.embed_text(doc)
+        await self._store.upsert_ticket(
+            ticket_id=ticket_id,
+            embedding=embedding,
+            document=doc,
+            title=ticket.title or ticket.affected_node,
+            priority=ticket.severity.value,
+            category=ticket.alarm_category or ticket.fault_type.value,
+            resolution_summary=resolution_summary,
+            resolved=resolved,
+        )
+        log.info("Indexed telco ticket %s (resolved=%s)", ticket_id, resolved)

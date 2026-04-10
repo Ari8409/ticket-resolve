@@ -281,6 +281,45 @@ class SOPStore:
         )
 
     # ------------------------------------------------------------------
+    # Get by SOP ID (for override resolution step fetch)
+    # ------------------------------------------------------------------
+
+    async def get_chunks_by_sop_id(self, sop_id: str) -> list[dict]:
+        """
+        Return all stored chunks for a given SOP ID, ordered by chunk_index.
+
+        Each dict contains:
+          ``chunk_type``  — "overview" | "step" | "escalation" | "generic"
+          ``chunk_index`` — position within the document (for ordering)
+          ``content``     — raw chunk text
+          ``metadata``    — full metadata dict
+
+        Used by the human review override flow to extract the resolution
+        steps from a reviewer-selected SOP.
+        """
+        results = await self._col.get(
+            where={"sop_id": {"$eq": sop_id}},
+            include=["documents", "metadatas"],
+        )
+        ids       = results.get("ids",       [])
+        documents = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+
+        chunks = []
+        for doc, meta in zip(documents, metadatas):
+            chunks.append({
+                "chunk_type":  meta.get("chunk_type", "generic"),
+                "chunk_index": int(meta.get("chunk_index", 0)),
+                "content":     doc,
+                "metadata":    meta,
+            })
+
+        # Order by chunk_index so steps come out in the correct sequence
+        chunks.sort(key=lambda c: c["chunk_index"])
+        log.debug("get_chunks_by_sop_id(%s) returned %d chunks", sop_id, len(chunks))
+        return chunks
+
+    # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
