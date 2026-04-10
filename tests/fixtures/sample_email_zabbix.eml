@@ -1,0 +1,22 @@
+From: zabbix@monitoring.telco.com
+To: noc-alerts@telco.com
+Subject: Problem: High packet loss on OLT-BLR-007 PON downstream
+Date: Sat, 01 Jun 2024 11:45:22 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+Problem started at 11:45:22 on 2024.06.01
+Problem name: High packet loss on OLT-BLR-007 PON downstream
+Host: OLT-BLR-007
+Host IP: 10.20.5.88
+Severity: High
+Operational data: Packet loss: 18.3%; Affected PON ports: 1-8; Impacted subscribers: 800
+Trigger: Packet loss > 5% for 5 minutes
+Trigger severity: High
+Trigger URL: http://zabbix.telco.com/triggers/12847
+
+Item values:
+  1. packet_loss on OLT-BLR-007 (10.20.5.88): 18.3 %
+
+Original problem ID: 387421
+

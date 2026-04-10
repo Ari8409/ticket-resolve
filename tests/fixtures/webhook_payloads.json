@@ -1,0 +1,19 @@
+{
+  "jira": {
+    "summary": "Login page returns 500 error",
+    "description": "The login endpoint /api/auth/login returns HTTP 500 for all users since the deploy at 14:30 UTC.",
+    "priority": "high",
+    "issuetype": {"name": "Bug"},
+    "labels": ["auth", "production"]
+  },
+  "github": {
+    "title": "CI pipeline failing on main branch",
+    "body": "All CI runs on main branch are failing with exit code 1 on the test step. Blocking all deployments.",
+    "labels": [{"name": "priority: high"}]
+  },
+  "generic": {
+    "subject": "Disk usage at 95% on prod-db-01",
+    "message": "The production database server prod-db-01 has reached 95% disk utilization. Immediate action required to prevent data loss.",
+    "urgency": "critical"
+  }
+}

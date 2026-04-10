@@ -1,0 +1,62 @@
+[
+  {
+    "alarm_id": "ALM-20260410-001",
+    "affected_node": "NODE-ATL-01",
+    "alarm_type": "node_down",
+    "severity": "critical",
+    "source_system": "nms",
+    "raised_at": "2026-04-10T06:00:00",
+    "cleared_at": null,
+    "status": "active",
+    "raw_payload": {
+      "nms_event_id": "E-8821",
+      "region": "US-SE",
+      "impact": "300 subscribers affected"
+    }
+  },
+  {
+    "alarm_id": "ALM-20260410-002",
+    "affected_node": "BS-MUM-042",
+    "alarm_type": "signal_loss",
+    "severity": "high",
+    "source_system": "nms",
+    "raised_at": "2026-04-10T05:30:00",
+    "cleared_at": "2026-04-10T07:15:00",
+    "status": "cleared",
+    "raw_payload": {
+      "nms_event_id": "E-8822",
+      "region": "IN-W",
+      "impact": "Self-healed after power cycle"
+    }
+  },
+  {
+    "alarm_id": "ALM-20260410-003",
+    "affected_node": "RTR-LON-007",
+    "alarm_type": "latency",
+    "severity": "medium",
+    "source_system": "zabbix",
+    "raised_at": "2026-04-10T08:45:00",
+    "cleared_at": null,
+    "status": "acknowledged",
+    "raw_payload": {
+      "trigger_id": "ZBX-5501",
+      "region": "EU-UK",
+      "impact": "Latency above 150ms threshold"
+    }
+  },
+  {
+    "alarm_id": "ALM-20260409-099",
+    "affected_node": "NODE-SYD-03",
+    "alarm_type": "hardware_failure",
+    "severity": "critical",
+    "source_system": "nagios",
+    "raised_at": "2026-04-09T22:00:00",
+    "cleared_at": "2026-04-10T01:00:00",
+    "status": "cleared",
+    "raw_payload": {
+      "service": "DISK_IO",
+      "region": "AU-SE",
+      "impact": "Disk replaced by on-call engineer"
+    }
+  }
+]

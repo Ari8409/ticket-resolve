@@ -1,0 +1,5 @@
+maintenance_id,title,maintenance_type,affected_nodes,start_time,end_time,description,contact,external_ref
+MW-2026-001,Quarterly router firmware upgrade,planned,"NODE-ATL-01,NODE-ATL-02",2026-04-10T02:00:00,2026-04-10T06:00:00,Scheduled firmware update for Cisco ASR 9000 series,noc-atl@example.com,CR-2026-0041
+MW-2026-002,Emergency power unit replacement,emergency,BS-MUM-042,2026-04-10T04:30:00,2026-04-10T08:00:00,UPS failure — generator handover required,noc-mum@example.com,INC-2026-5521
+MW-2026-003,Change freeze — pre-release lock,change_freeze,"RTR-LON-007,RTR-LON-008,RTR-LON-009",2026-04-09T18:00:00,2026-04-11T06:00:00,EMEA release blackout window,release-mgr@example.com,RFC-2026-0088
+MW-2026-004,Aerial survey — fibre route inspection,survey,NODE-SYD-03,2026-04-12T08:00:00,2026-04-12T17:00:00,Annual aerial fibre route inspection,field-ops@example.com,SRV-2026-007

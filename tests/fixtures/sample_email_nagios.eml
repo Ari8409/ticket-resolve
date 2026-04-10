@@ -1,0 +1,19 @@
+From: nagios@noc.telco.com
+To: oncall@telco.com
+Subject: ** PROBLEM Host alert - NODE-ATL-01 is DOWN **
+Date: Sat, 01 Jun 2024 09:10:03 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+***** Nagios *****
+
+Notification Type: PROBLEM
+
+Host: NODE-ATL-01
+State: DOWN
+Address: 10.0.4.51
+Date/Time: 2024-06-01 09:10:03
+
+Additional Info:
+PING CRITICAL - Packet loss = 100%, RTA = 0.00 ms. Host NODE-ATL-01 is completely unreachable. Affects 45000 subscribers in Atlanta North sector.
+

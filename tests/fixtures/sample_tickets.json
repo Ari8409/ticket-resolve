@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Database connection timeout",
+    "description": "PostgreSQL times out after 30 seconds under sustained load. Affects all read replicas.",
+    "priority": "high",
+    "category": "database"
+  },
+  {
+    "summary": "VPN not connecting",
+    "body": "Remote employees cannot establish VPN connections since the firewall update this morning.",
+    "severity": "medium",
+    "label": "network"
+  },
+  {
+    "title": "Email service down",
+    "description": "SMTP server is refusing connections. No outbound emails are being sent since 08:00 UTC.",
+    "priority": "critical",
+    "category": "email"
+  }
+]

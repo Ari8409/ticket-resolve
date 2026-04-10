@@ -1,0 +1,4 @@
+HOST NAME,SERVICE,STATE,DATE/TIME,DURATION,INFORMATION,PLUGIN OUTPUT
+prod-router-01.noc.local,BGP Session,CRITICAL,06-01-2024 08:32:15,0d 0h 5m 12s,"BGP peer 203.0.113.1 session DOWN","CRITICAL: BGP peer 203.0.113.1 is DOWN. Last received KEEPALIVE: 312s ago"
+bs-mumbai-042.noc.local,RF Signal,WARNING,06-01-2024 09:10:00,0d 0h 0m 45s,"RSSI below threshold on sector 2","WARNING: RSSI=-108dBm (threshold: -100dBm). Subscribers impacted: 1200"
+core-switch-lon-03.noc.local,Interface,DOWN,06-01-2024 11:20:33,0d 0h 2m 8s,"Gi0/1 link down","CRITICAL: GigabitEthernet0/1 is DOWN - Link failure detected"

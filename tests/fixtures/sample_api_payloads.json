@@ -1,0 +1,81 @@
+{
+  "generic": {
+    "ticket_id": "INC-98765",
+    "timestamp": "2024-06-01T13:30:00Z",
+    "fault_type": "congestion",
+    "affected_node": "AGGR-DEL-SW02",
+    "severity": "medium",
+    "description": "Aggregation switch AGGR-DEL-SW02 uplink utilisation at 98%. Traffic shaping triggered for non-critical services.",
+    "resolution_steps": ["Redistribute subscriber VLANs", "Apply QoS policy", "Provision additional uplink"],
+    "sop_id": "SOP-NET-008"
+  },
+
+  "prometheus": {
+    "receiver": "noc-webhook",
+    "status": "firing",
+    "alerts": [
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "NodeDown",
+          "instance": "NODE-ATL-01:9100",
+          "job": "network-nodes",
+          "severity": "critical",
+          "region": "us-east"
+        },
+        "annotations": {
+          "summary": "Node NODE-ATL-01 is unreachable",
+          "description": "Node NODE-ATL-01 has been down for more than 5 minutes. Packet loss 100%. 45000 subscribers affected.",
+          "runbook_url": "https://wiki.telco.com/runbooks/node-down"
+        },
+        "startsAt": "2024-06-01T09:10:00Z",
+        "endsAt": "0001-01-01T00:00:00Z"
+      },
+      {
+        "status": "firing",
+        "labels": {
+          "alertname": "HighLatency",
+          "instance": "RTR-LON-CORE-03:9100",
+          "job": "core-routers",
+          "severity": "warning"
+        },
+        "annotations": {
+          "summary": "High RTT on RTR-LON-CORE-03 backhaul",
+          "description": "RTT spiking to 450ms on RTR-LON-CORE-03. Baseline 12ms. Possible congestion on upstream link.",
+          "runbook_url": "https://wiki.telco.com/runbooks/high-latency"
+        },
+        "startsAt": "2024-06-01T10:02:00Z",
+        "endsAt": "0001-01-01T00:00:00Z"
+      }
+    ],
+    "groupLabels": {"alertname": "NodeDown"},
+    "commonLabels": {"job": "network-nodes"},
+    "commonAnnotations": {},
+    "externalURL": "http://alertmanager.telco.com"
+  },
+
+  "pagerduty": {
+    "messages": [
+      {
+        "type": "incident.trigger",
+        "incident": {
+          "incident_number": "PD-4421",
+          "title": "eNodeB ENB-CHN-214 hardware failure — cell offline",
+          "urgency": "critical",
+          "created_at": "2024-06-02T07:00:00Z",
+          "service": {
+            "name": "ENB-CHN-214",
+            "id": "SVC-ENB-RAN"
+          },
+          "body": {
+            "details": "eNodeB ENB-CHN-214 at Chennai Tower Site 214 is reporting a power amplifier hardware failure. The cell site is completely offline. Field dispatch required."
+          },
+          "escalation_policy": {
+            "id": "SOP-HW-021",
+            "name": "RAN Hardware Failure Policy"
+          }
+        }
+      }
+    ]
+  }
+}
