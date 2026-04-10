@@ -105,6 +105,31 @@ class TicketStore:
             where={"resolved": {"$eq": True}},
         )
 
+    async def query_high_priority_similar(
+        self,
+        embedding: list[float],
+        n_results: int = 3,
+        score_threshold: float = 0.0,
+    ) -> list[SimilarTicket]:
+        """
+        Return resolved tickets that are similar AND tagged critical or high priority.
+
+        Used as a dedicated escalation-precedent source in the classifier's
+        parallel fetch phase.  Only resolved tickets are included so results
+        carry confirmed resolution paths for severe incidents.
+        """
+        return await self._query(
+            embedding=embedding,
+            n_results=n_results,
+            score_threshold=score_threshold,
+            where={
+                "$and": [
+                    {"resolved":  {"$eq":  True}},
+                    {"priority":  {"$in":  ["critical", "high"]}},
+                ]
+            },
+        )
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

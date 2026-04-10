@@ -200,18 +200,22 @@ async def get_maintenance_checker(
 def get_fault_classifier(
     settings: SettingsDep,
     matching_engine: Annotated[MatchingEngine, Depends(get_matching_engine)],
+    sop_retriever: Annotated[SOPRetriever, Depends(get_sop_retriever)],
 ) -> FaultClassifier:
     """
     Provides a FaultClassifier backed by the Anthropic Claude API.
 
-    The Anthropic AsyncAnthropic client is constructed per-request (lightweight —
-    it holds no persistent connection).  The matching_engine is reused from the
-    existing dependency chain for Chroma similarity search.
+    Phase 1 uses four parallel fetches across:
+      • MatchingEngine → Chroma tickets (resolved, all, high-priority)
+      • SOPRetriever   → Chroma SOPs collection
+
+    Phase 2 calls Claude with the fetched context injected into the prompt.
     """
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     return FaultClassifier(
         client=client,
         matching_engine=matching_engine,
+        sop_retriever=sop_retriever,
         model=settings.CLASSIFIER_MODEL,
         similar_top_k=settings.CLASSIFIER_SIMILAR_TOP_K,
     )

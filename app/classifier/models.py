@@ -59,13 +59,16 @@ class ClassificationResult(BaseModel):
     reasoning           — one-sentence justification from the model
     similar_ticket_ids  — up to 3 IDs of resolved historical tickets
                           ranked by cosine similarity to the input text
+    relevant_sops       — titles of SOPs matched during the parallel fetch
     model               — Anthropic model ID used for classification
     latency_ms          — wall-clock time for the full classify() call
+                          (includes parallel fetch + Claude call)
     """
     fault_type:          FaultType
     affected_layer:      AffectedLayer
     confidence_score:    float          = Field(ge=0.0, le=1.0)
     reasoning:           str
     similar_ticket_ids:  list[str]      = Field(default_factory=list)
+    relevant_sops:       list[str]      = Field(default_factory=list)
     model:               str
     latency_ms:          int

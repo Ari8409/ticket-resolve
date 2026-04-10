@@ -90,6 +90,27 @@ class MatchingEngine:
             score_threshold=self._score_threshold,
         )
 
+    async def find_similar_high_priority(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+    ) -> list[SimilarTicket]:
+        """
+        Return resolved tickets that are both similar to ``query`` AND have
+        critical or high priority.
+
+        Provides an escalation-precedent signal that is distinct from the
+        general resolved-ticket search: it surfaces the most severe past
+        incidents that match the current fault description, regardless of
+        whether those tickets rank in the top-k of the unrestricted search.
+        """
+        embedding = await self._embedder.embed_text(query)
+        return await self._store.query_high_priority_similar(
+            embedding=embedding,
+            n_results=top_k or self._top_k,
+            score_threshold=self._score_threshold,
+        )
+
     async def find_similar_for_ticket(
         self,
         ticket: TicketIn,
