@@ -135,6 +135,13 @@ class SOPMarkdownParser:
         if "estimated_resolution_time" in fm:
             est_time = str(fm["estimated_resolution_time"]).strip()
 
+        # RAN / Ericsson OPI optional fields — read straight from frontmatter
+        managed_object          = str(fm.get("managed_object", "")).strip()
+        additional_text         = str(fm.get("additional_text", "")).strip()
+        alarm_severity          = str(fm.get("alarm_severity", "primary")).strip().lower()
+        on_site_required        = bool(fm.get("on_site_required", False))
+        secondary_alarm_pointer = str(fm.get("secondary_alarm_pointer", "")).strip()
+
         # Validate required fields
         missing = [
             name for name, val in [
@@ -152,8 +159,9 @@ class SOPMarkdownParser:
             )
 
         log.debug(
-            "Parsed SOP %s — category=%s steps=%d preconditions=%d",
-            sop_id, fault_cat, len(resolution_steps), len(preconditions),
+            "Parsed SOP %s — category=%s mo=%s severity=%s steps=%d preconditions=%d",
+            sop_id, fault_cat, managed_object or "—", alarm_severity,
+            len(resolution_steps), len(preconditions),
         )
         return SOPRecord(
             sop_id=sop_id,
@@ -162,6 +170,11 @@ class SOPMarkdownParser:
             resolution_steps=resolution_steps,
             escalation_path=escalation_path,
             estimated_resolution_time=est_time,
+            managed_object=managed_object,
+            additional_text=additional_text,
+            alarm_severity=alarm_severity,
+            on_site_required=on_site_required,
+            secondary_alarm_pointer=secondary_alarm_pointer,
             title=title,
             source_path=str(path),
             raw_content=content,

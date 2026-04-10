@@ -20,9 +20,18 @@ Structured chunks (written by SOPKnowledgeBase) additionally carry:
   precondition_count        int   — number of preconditions
   step_count                int   — total resolution steps in the SOP
 
+RAN / Ericsson OPI fields (populated for RAN SOPs, empty for generic):
+
+  managed_object            str   — Ericsson MO class, e.g. "NRSectorCarrier"
+  additional_text           str   — alarm additional text that selects remedy branch
+  alarm_severity            str   — "primary" | "secondary"
+  on_site_required          bool  — whether field engineer attendance is required
+  secondary_alarm_pointer   str   — primary alarm name (secondary SOPs only)
+
 The richer metadata enables:
-  • query_by_category()   — restrict Chroma search to a specific fault type
-  • query_steps_only()    — return only step chunks (most precise retrieval)
+  • query_by_category()        — restrict search to a specific fault type
+  • query_steps_only()         — return only step chunks (most precise retrieval)
+  • query_by_managed_object()  — restrict search to a specific Ericsson MO
 """
 import logging
 from typing import Optional
@@ -67,6 +76,12 @@ class SOPStore:
             "estimated_resolution_time": "",
             "precondition_count":        0,
             "step_count":                0,
+            # RAN fields — defaults
+            "managed_object":          "",
+            "additional_text":         "",
+            "alarm_severity":          "primary",
+            "on_site_required":        False,
+            "secondary_alarm_pointer": "",
         }
         await self._col.upsert(
             ids=[chunk_id],
@@ -95,12 +110,18 @@ class SOPStore:
         estimated_resolution_time: str = "",
         precondition_count: int = 0,
         step_count: int = 0,
+        # RAN / Ericsson OPI fields
+        managed_object: str = "",
+        additional_text: str = "",
+        alarm_severity: str = "primary",
+        on_site_required: bool = False,
+        secondary_alarm_pointer: str = "",
     ) -> None:
         """
         Upsert a structured SOP chunk produced by SOPKnowledgeBase.
 
         Carries the full metadata set so callers can filter by
-        fault_category, chunk_type, or any other dimension.
+        fault_category, chunk_type, managed_object, or any other dimension.
         """
         metadata = {
             "sop_id":                    sop_id,
@@ -114,6 +135,12 @@ class SOPStore:
             "estimated_resolution_time": estimated_resolution_time,
             "precondition_count":        precondition_count,
             "step_count":                step_count,
+            # RAN fields
+            "managed_object":            managed_object,
+            "additional_text":           additional_text,
+            "alarm_severity":            alarm_severity,
+            "on_site_required":          on_site_required,
+            "secondary_alarm_pointer":   secondary_alarm_pointer,
         }
         await self._col.upsert(
             ids=[chunk_id],
@@ -121,7 +148,10 @@ class SOPStore:
             documents=[content],
             metadatas=[metadata],
         )
-        log.debug("Upserted structured SOP chunk %s (type=%s)", chunk_id, chunk_type)
+        log.debug(
+            "Upserted structured SOP chunk %s (type=%s, mo=%s)",
+            chunk_id, chunk_type, managed_object or "—",
+        )
 
     # ------------------------------------------------------------------
     # Query — all chunks
@@ -176,6 +206,78 @@ class SOPStore:
             embedding,
             n_results,
             where={"chunk_type": {"$eq": "step"}},
+        )
+
+    # ------------------------------------------------------------------
+    # Query — filtered by Managed Object (RAN)
+    # ------------------------------------------------------------------
+
+    async def query_by_managed_object(
+        self,
+        embedding: list[float],
+        managed_object: str,
+        n_results: int = 5,
+    ) -> list[SOPMatch]:
+        """
+        Return the top-n SOP chunks for a specific Ericsson Managed Object.
+
+        Useful when the alarm source MO is known (e.g. "NRSectorCarrier")
+        and the agent wants only remedy actions applicable to that MO.
+        """
+        return await self._query(
+            embedding,
+            n_results,
+            where={"managed_object": {"$eq": managed_object}},
+        )
+
+    # ------------------------------------------------------------------
+    # Query — primary alarms only (skip secondary/symptom SOPs)
+    # ------------------------------------------------------------------
+
+    async def query_primary_alarms(
+        self,
+        embedding: list[float],
+        n_results: int = 3,
+    ) -> list[SOPMatch]:
+        """
+        Return only SOPs for primary (root-cause) alarms.
+
+        Secondary alarms (like Service Unavailable) require finding and
+        resolving the correlated primary alarm first.  Use this query
+        when you want to avoid surfacing symptom-only procedures.
+        """
+        return await self._query(
+            embedding,
+            n_results,
+            where={"alarm_severity": {"$eq": "primary"}},
+        )
+
+    # ------------------------------------------------------------------
+    # Query — combined category + MO (RAN precision retrieval)
+    # ------------------------------------------------------------------
+
+    async def query_by_category_and_mo(
+        self,
+        embedding: list[float],
+        fault_category: str,
+        managed_object: str,
+        n_results: int = 3,
+    ) -> list[SOPMatch]:
+        """
+        Return SOP chunks matching both fault category and Managed Object.
+
+        The most precise retrieval path for RAN alarms where both the
+        alarm type and the raising MO are known.
+        """
+        return await self._query(
+            embedding,
+            n_results,
+            where={
+                "$and": [
+                    {"fault_category": {"$eq": fault_category.lower()}},
+                    {"managed_object": {"$eq": managed_object}},
+                ]
+            },
         )
 
     # ------------------------------------------------------------------

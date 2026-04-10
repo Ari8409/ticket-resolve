@@ -216,6 +216,12 @@ class SOPKnowledgeBase:
                         estimated_resolution_time=record.estimated_resolution_time,
                         precondition_count=record.precondition_count,
                         step_count=record.step_count,
+                        # RAN / Ericsson OPI fields
+                        managed_object=record.managed_object,
+                        additional_text=record.additional_text,
+                        alarm_severity=record.alarm_severity,
+                        on_site_required=record.on_site_required,
+                        secondary_alarm_pointer=record.secondary_alarm_pointer,
                     )
 
                 report.indexed += len(chunks)
@@ -299,11 +305,33 @@ class SOPKnowledgeBase:
         Build the list of text chunks for Chroma from a structured SOPRecord.
 
         Chunk layout:
-          index 0      — overview (title + preconditions summary)
+          index 0      — overview (title + MO context + preconditions summary)
           index 1…N    — one chunk per resolution step (most precise)
           index N+1    — escalation path
+
+        For RAN SOPs the Managed Object and Additional Text are embedded into
+        every chunk's text so that MO-specific queries surface the right remedy
+        branch even when fault_category filters are not applied.
         """
         chunks = []
+
+        # Build a context prefix for RAN SOPs
+        mo_context = ""
+        if record.managed_object:
+            mo_context = f"Managed Object: {record.managed_object}"
+            if record.additional_text:
+                mo_context += f" | Additional Text: {record.additional_text}"
+            mo_context += "\n"
+
+        severity_note = ""
+        if record.alarm_severity == "secondary":
+            ptr = record.secondary_alarm_pointer
+            severity_note = (
+                f"NOTE: This is a SECONDARY alarm. "
+                f"Identify and resolve the correlated primary alarm first"
+                + (f" ({ptr})" if ptr else "")
+                + ".\n"
+            )
 
         # Chunk 0 — overview
         preconditions_text = (
@@ -313,6 +341,8 @@ class SOPKnowledgeBase:
         )
         overview_text = (
             f"{record.title}\n"
+            f"{mo_context}"
+            f"{severity_note}"
             f"Category: {record.fault_category}\n"
             f"Estimated resolution time: {record.estimated_resolution_time}\n\n"
             f"{preconditions_text}"
@@ -325,17 +355,18 @@ class SOPKnowledgeBase:
         })
 
         # Chunks 1…N — one per resolution step
+        mo_tag = f" [{record.managed_object}]" if record.managed_object else ""
         for i, step in enumerate(record.resolution_steps, start=1):
             chunks.append({
                 "chunk_id": f"{record.sop_id}_step_{i}",
                 "index":    i,
                 "type":     "step",
-                "text":     f"{record.title} — Step {i}: {step}",
+                "text":     f"{record.title}{mo_tag} — Step {i}: {step}",
             })
 
         # Final chunk — escalation path
         escalation_text = (
-            f"{record.title} — Escalation Path\n"
+            f"{record.title}{mo_tag} — Escalation Path\n"
             f"{record.escalation_path}\n"
             f"Estimated resolution time: {record.estimated_resolution_time}"
         )
