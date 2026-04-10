@@ -136,29 +136,75 @@ class TelcoTicketRow(SQLModel, table=True):
     """
     Persisted telco ticket.  Enum columns are stored as plain TEXT with
     CHECK constraints enforced at the DDL layer (see module docstring).
+
+    Aligned with the CTTS (Customer Trouble Ticket System) data schema used
+    in the NOC daily ticket exports (27 Nov – 4 Dec 2025, 39 columns).
+    All CTTS-sourced columns are nullable to support both manual and import
+    creation paths.
     """
 
     __tablename__ = "telco_tickets"
 
-    # Primary key
+    # --- Primary key ---
     ticket_id: str = Field(
         default_factory=lambda: f"TKT-{uuid.uuid4().hex[:8].upper()}",
         primary_key=True,
         max_length=32,
     )
 
-    # Fault details
-    timestamp:        datetime      = Field(default_factory=datetime.utcnow)
-    fault_type:       str           = Field(..., max_length=32)       # FaultType value
-    affected_node:    str           = Field(..., max_length=128, index=True)
-    severity:         str           = Field(..., max_length=16)       # Severity value
-    status:           str           = Field(default=TelcoTicketStatus.OPEN.value, max_length=16, index=True)
+    # --- CTTS identity ---
+    ctts_ticket_number: Optional[int] = Field(default=None, index=True)
 
-    # Content
-    description:      str           = Field(..., max_length=4000)
-    resolution_steps: str           = Field(default="[]", max_length=8000)  # JSON list[str]
+    # --- Timestamps ---
+    timestamp:        datetime           = Field(default_factory=datetime.utcnow)
+    event_start_time: Optional[datetime] = Field(default=None)
+    event_end_time:   Optional[datetime] = Field(default=None)
+    modified_date:    Optional[datetime] = Field(default=None)
 
-    # SOP linkage — nullable FK to sops.sop_id
+    # --- Core fault fields ---
+    fault_type:    str = Field(..., max_length=32)       # FaultType value
+    affected_node: str = Field(..., max_length=128, index=True)
+    severity:      str = Field(..., max_length=16)       # Severity value
+    status:        str = Field(default=TelcoTicketStatus.OPEN.value, max_length=16, index=True)
+
+    # --- Content ---
+    description:      str = Field(..., max_length=4000)
+    resolution_steps: str = Field(default="[]", max_length=8000)  # JSON list[str]
+
+    # --- Parsed alarm fields (auto-populated from CTTS description) ---
+    node_id:             Optional[str] = Field(default=None, max_length=128)
+    alarm_category:      Optional[str] = Field(default=None, max_length=64)
+    alarm_name:          Optional[str] = Field(default=None, max_length=128)
+    alarm_severity_code: Optional[str] = Field(default=None, max_length=8)
+
+    # --- Assignment & ownership ---
+    title:               Optional[str] = Field(default=None, max_length=256)
+    assignment_profile:  Optional[str] = Field(default=None, max_length=128)
+    group:               Optional[str] = Field(default=None, max_length=64)
+    object_class:        Optional[str] = Field(default=None, max_length=32)
+    owner_profile:       Optional[str] = Field(default=None, max_length=128)
+    owner_profile_group: Optional[str] = Field(default=None, max_length=128)
+    resolved_group:      Optional[str] = Field(default=None, max_length=128)
+    last_ack_by:         Optional[str] = Field(default=None, max_length=128)
+    resolved_person:     Optional[str] = Field(default=None, max_length=128)
+
+    # --- Source & categorisation ---
+    source:          Optional[str] = Field(default=None, max_length=64)
+    category_group:  Optional[str] = Field(default=None, max_length=64)
+    network_type:    Optional[str] = Field(default=None, max_length=16)
+    mobile_or_fixed: Optional[str] = Field(default=None, max_length=32)
+
+    # --- Location ---
+    location_details: Optional[str] = Field(default=None, max_length=256)
+    location_id:      Optional[str] = Field(default=None, max_length=64)
+
+    # --- Resolution ---
+    primary_cause:   Optional[str] = Field(default=None, max_length=256)
+    remarks:         Optional[str] = Field(default=None, max_length=2000)
+    resolution:      Optional[str] = Field(default=None, max_length=1000)
+    resolution_code: Optional[str] = Field(default=None, max_length=256)
+
+    # --- SOP linkage — nullable FK to sops.sop_id ---
     sop_id: Optional[str] = Field(
         default=None,
         max_length=64,
@@ -166,7 +212,7 @@ class TelcoTicketRow(SQLModel, table=True):
         index=True,
     )
 
-    # Audit
+    # --- Audit ---
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -237,13 +283,40 @@ class TelcoTicketRepository:
     def _to_row(ticket: TelcoTicketCreate) -> TelcoTicketRow:
         return TelcoTicketRow(
             ticket_id=ticket.ticket_id,
+            ctts_ticket_number=ticket.ctts_ticket_number,
             timestamp=ticket.timestamp,
+            event_start_time=ticket.event_start_time,
+            event_end_time=ticket.event_end_time,
+            modified_date=ticket.modified_date,
             fault_type=ticket.fault_type.value,
             affected_node=ticket.affected_node,
             severity=ticket.severity.value,
             status=TelcoTicketStatus.OPEN.value,
             description=ticket.description,
             resolution_steps=json.dumps(ticket.resolution_steps),
+            node_id=ticket.node_id,
+            alarm_category=ticket.alarm_category,
+            alarm_name=ticket.alarm_name,
+            alarm_severity_code=ticket.alarm_severity_code,
+            title=ticket.title,
+            assignment_profile=ticket.assignment_profile,
+            group=ticket.group,
+            object_class=ticket.object_class,
+            owner_profile=ticket.owner_profile,
+            owner_profile_group=ticket.owner_profile_group,
+            resolved_group=ticket.resolved_group,
+            last_ack_by=ticket.last_ack_by,
+            resolved_person=ticket.resolved_person,
+            source=ticket.source,
+            category_group=ticket.category_group,
+            network_type=ticket.network_type,
+            mobile_or_fixed=ticket.mobile_or_fixed,
+            location_details=ticket.location_details,
+            location_id=ticket.location_id,
+            primary_cause=ticket.primary_cause,
+            remarks=ticket.remarks,
+            resolution=ticket.resolution,
+            resolution_code=ticket.resolution_code,
             sop_id=ticket.sop_id,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -252,17 +325,44 @@ class TelcoTicketRepository:
     @staticmethod
     def _row_to_dict(row: TelcoTicketRow) -> dict:
         return {
-            "ticket_id":        row.ticket_id,
-            "timestamp":        row.timestamp,
-            "fault_type":       FaultType(row.fault_type),
-            "affected_node":    row.affected_node,
-            "severity":         Severity(row.severity),
-            "status":           TelcoTicketStatus(row.status),
-            "description":      row.description,
-            "resolution_steps": json.loads(row.resolution_steps),
-            "sop_id":           row.sop_id,
-            "created_at":       row.created_at,
-            "updated_at":       row.updated_at,
+            "ticket_id":           row.ticket_id,
+            "ctts_ticket_number":  row.ctts_ticket_number,
+            "timestamp":           row.timestamp,
+            "event_start_time":    row.event_start_time,
+            "event_end_time":      row.event_end_time,
+            "modified_date":       row.modified_date,
+            "fault_type":          FaultType(row.fault_type),
+            "affected_node":       row.affected_node,
+            "severity":            Severity(row.severity),
+            "status":              TelcoTicketStatus(row.status),
+            "description":         row.description,
+            "resolution_steps":    json.loads(row.resolution_steps),
+            "node_id":             row.node_id,
+            "alarm_category":      row.alarm_category,
+            "alarm_name":          row.alarm_name,
+            "alarm_severity_code": row.alarm_severity_code,
+            "title":               row.title,
+            "assignment_profile":  row.assignment_profile,
+            "group":               row.group,
+            "object_class":        row.object_class,
+            "owner_profile":       row.owner_profile,
+            "owner_profile_group": row.owner_profile_group,
+            "resolved_group":      row.resolved_group,
+            "last_ack_by":         row.last_ack_by,
+            "resolved_person":     row.resolved_person,
+            "source":              row.source,
+            "category_group":      row.category_group,
+            "network_type":        row.network_type,
+            "mobile_or_fixed":     row.mobile_or_fixed,
+            "location_details":    row.location_details,
+            "location_id":         row.location_id,
+            "primary_cause":       row.primary_cause,
+            "remarks":             row.remarks,
+            "resolution":          row.resolution,
+            "resolution_code":     row.resolution_code,
+            "sop_id":              row.sop_id,
+            "created_at":          row.created_at,
+            "updated_at":          row.updated_at,
         }
 
     # --- write operations ---------------------------------------------------
@@ -292,6 +392,18 @@ class TelcoTicketRepository:
             row.sop_id = patch.sop_id
         if patch.description is not None:
             row.description = patch.description
+        if patch.primary_cause is not None:
+            row.primary_cause = patch.primary_cause
+        if patch.remarks is not None:
+            row.remarks = patch.remarks
+        if patch.resolution is not None:
+            row.resolution = patch.resolution
+        if patch.resolution_code is not None:
+            row.resolution_code = patch.resolution_code
+        if patch.resolved_group is not None:
+            row.resolved_group = patch.resolved_group
+        if patch.resolved_person is not None:
+            row.resolved_person = patch.resolved_person
 
         row.updated_at = datetime.utcnow()
         await self._session.commit()
