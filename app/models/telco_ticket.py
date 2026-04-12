@@ -129,21 +129,50 @@ _DESC_RE = re.compile(
     re.MULTILINE,
 )
 
+# Normalise non-standard spaced alarm categories (e.g. "Equipment Alarm") to
+# the camelCase form used throughout the CTTS schema and SOP metadata.
+_ALARM_CATEGORY_MAP: dict[str, str] = {
+    "equipment alarm":          "equipmentAlarm",
+    "communications alarm":     "communicationsAlarm",
+    "processing error alarm":   "processingErrorAlarm",
+    "performance alarm":        "performanceAlarm",
+    "environmental alarm":      "environmentalAlarm",
+    "quality of service alarm": "qualityOfServiceAlarm",
+}
+
+# Strip Ericsson-specific "UNKNOWN/" or any ALL-CAPS MO-type prefix that
+# precedes the real alarm name in the alarm_name capture group.
+# e.g. "UNKNOWN/DigitalCable_CableFailure" → "DigitalCable_CableFailure"
+_ALARM_NAME_PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]*/")
+
 
 def _parse_ctts_description(description: str) -> dict:
     """
     Extract structured fields from CTTS description format:
       {NodeID}*{alarmCategory}/{alarmName}*{severityCode}*{shortText}\\n\\n{longText}
 
+    Handles two non-standard variants observed in 3G/legacy CTTS exports:
+    1. Spaced alarm categories  — "Equipment Alarm" → normalised to "equipmentAlarm"
+    2. Sub-category prefixes    — "UNKNOWN/DigitalCable_CableFailure" → "DigitalCable_CableFailure"
+
     Returns a dict of parsed fields (all optional — returns {} on no match).
     """
     m = _DESC_RE.match(description.strip())
     if not m:
         return {}
+
+    # Normalise alarm_category: map spaced legacy forms to camelCase
+    category_raw = m.group("alarm_category").strip()
+    alarm_category = _ALARM_CATEGORY_MAP.get(category_raw.lower(), category_raw)
+
+    # Strip leading ALL-CAPS MO-type prefix from alarm_name (e.g. "UNKNOWN/")
+    alarm_name_raw = m.group("alarm_name").strip()
+    alarm_name = _ALARM_NAME_PREFIX_RE.sub("", alarm_name_raw)
+
     return {
-        "node_id":            m.group("node_id").strip(),
-        "alarm_category":     m.group("alarm_category").strip(),
-        "alarm_name":         m.group("alarm_name").strip(),
+        "node_id":             m.group("node_id").strip(),
+        "alarm_category":      alarm_category,
+        "alarm_name":          alarm_name,
         "alarm_severity_code": m.group("alarm_severity_code").strip(),
     }
 
