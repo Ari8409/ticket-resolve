@@ -16,11 +16,13 @@ SDLC Gate Order
   GATE 3  build          ← Tech Lead approves
             Deliverables : lld.md + tdd.md  (must be updated post-build)
             Prerequisite : scan must PASS on all changed source files
+            Prerequisite : dashboard-check must PASS (SDLCDashboard.tsx updated with new release)
   GATE 4  testing        ← Testing Lead approves
             Deliverables : ut-report.md + sit-report.md + rai-compliance.md + accessibility.md
   GATE 5  deployment     ← Tech Lead approves
             Deliverables : deployment.md + lessons-learned.md
             Prerequisite : lessons-check must PASS before Deployment can be approved
+            Prerequisite : framework-sync must PASS (release registered in sdlc-framework)
 
 Usage
 ─────
@@ -33,6 +35,8 @@ Usage
   python sdlc_workflow.py data-check      R-15 [--db data/tickets.db] [--table telco_tickets]
   python sdlc_workflow.py scan            R-15 app/api/v1/sla.py frontend/src/components/SLAWidget.tsx
   python sdlc_workflow.py lessons-check   R-15 [--dashboard path/to/SDLCDashboard.tsx] [--md path/to/lessons-learned.md]
+  python sdlc_workflow.py dashboard-check R-16 [--dashboard path/to/SDLCDashboard.tsx]
+  python sdlc_workflow.py framework-sync  R-16 [--url http://localhost:8002]
 
 Exit codes:  0 = success/passed   1 = gate blocked / validation failed   2 = usage error
 """
@@ -92,8 +96,10 @@ GATE_META: dict[str, dict] = {
         "deliverables": ["lld", "tdd"],
         "description": "LLD and TDD updated post-build and approved by Tech Lead.",
         # Gate 3 requires a passing code scan before approval
-        "requires_data_check": False,
-        "requires_scan": True,
+        "requires_data_check":      False,
+        "requires_scan":            True,
+        # Gate 3 also requires SDLCDashboard.tsx to be updated with the new release
+        "requires_dashboard_check": True,
     },
     "testing": {
         "label": "Testing Complete",
@@ -112,6 +118,8 @@ GATE_META: dict[str, dict] = {
         "requires_scan":          False,
         # Gate 5 requires a passing lessons-check before approval
         "requires_lessons_check": True,
+        # Gate 5 also requires the release to be registered in the sdlc-framework
+        "requires_framework_sync": True,
     },
 }
 
@@ -378,6 +386,15 @@ def cmd_status(args: argparse.Namespace) -> None:
         if lc:
             lc_mark = "✓" if lc["passed"] else "✗"
             print(f"  │  [{lc_mark}] Lessons Check       ({lc['ran_at'][:10]})")
+        dbc = guardrails.get("dashboard_check")
+        if dbc:
+            dbc_mark = "✓" if dbc["passed"] else "✗"
+            print(f"  │  [{dbc_mark}] Dashboard Check     ({dbc['ran_at'][:10]})")
+        fs = guardrails.get("framework_sync")
+        if fs:
+            fs_mark = "✓" if fs["passed"] else "✗"
+            sync_id = fs.get("synced_id","?")
+            print(f"  │  [{fs_mark}] Framework Sync      ({fs['ran_at'][:10]})  id={sync_id}")
         print(f"  └{'─'*52}")
         print()
 
@@ -418,6 +435,16 @@ def next_steps(state: dict, phase: str) -> None:
             if not lc or not lc.get("passed"):
                 print(f"    • Run lessons-learned check (required before Deployment approval):")
                 print(f"      python sdlc_workflow.py lessons-check {rid}")
+        if meta.get("requires_dashboard_check"):
+            dbc = guardrails.get("dashboard_check")
+            if not dbc or not dbc.get("passed"):
+                print(f"    • Update SDLCDashboard.tsx with {rid} entries, then run dashboard check:")
+                print(f"      python sdlc_workflow.py dashboard-check {rid}")
+        if meta.get("requires_framework_sync"):
+            fs = guardrails.get("framework_sync")
+            if not fs or not fs.get("passed"):
+                print(f"    • Register {rid} in sdlc-framework (ensure backend on :8002):")
+                print(f"      python sdlc_workflow.py framework-sync {rid}")
         print(f"    • {meta['approver_role']} must approve gate '{phase}':")
         print(f"      python sdlc_workflow.py approve {rid} {phase} --role \"{meta['approver_role']}\" --name \"<name>\"")
 
@@ -603,6 +630,47 @@ def cmd_approve(args: argparse.Namespace) -> None:
                 f"     to frontend/src/pages/SDLCDashboard.tsx\n"
                 f"  2. Fill in context-templates/deliverables/lessons-learned.md\n"
                 f"  3. Re-run: python sdlc_workflow.py lessons-check {release_id}",
+                code=1,
+            )
+
+    # ── Prerequisite: dashboard-check required before Build (Gate 3) ─────────
+    if meta.get("requires_dashboard_check"):
+        dc = guardrails.get("dashboard_check")
+        if not dc:
+            _die(
+                f"Gate '{gate}' requires a passing dashboard check before approval.\n"
+                f"  Run: python sdlc_workflow.py dashboard-check {release_id}\n"
+                f"  Then re-run this approve command once it passes.",
+                code=1,
+            )
+        if not dc.get("passed"):
+            _die(
+                f"Gate '{gate}' is BLOCKED — dashboard check failed on {dc.get('ran_at','?')[:10]}.\n"
+                f"  Update frontend/src/pages/SDLCDashboard.tsx with R-{release_id} entries:\n"
+                f"  • Add '{release_id}' to ReleaseKey type\n"
+                f"  • Add entry to RELEASES array\n"
+                f"  • Add entry to ITERATIONS array\n"
+                f"  • Add at least one item to RICEF array with  iteration: '{release_id}'\n"
+                f"  Re-run: python sdlc_workflow.py dashboard-check {release_id}",
+                code=1,
+            )
+
+    # ── Prerequisite: framework-sync required before Deployment (Gate 5) ─────
+    if meta.get("requires_framework_sync"):
+        fs = guardrails.get("framework_sync")
+        if not fs:
+            _die(
+                f"Gate '{gate}' requires a passing framework sync check before approval.\n"
+                f"  Run: python sdlc_workflow.py framework-sync {release_id}\n"
+                f"  Then re-run this approve command once it passes.",
+                code=1,
+            )
+        if not fs.get("passed"):
+            _die(
+                f"Gate '{gate}' is BLOCKED — framework sync failed on {fs.get('ran_at','?')[:10]}.\n"
+                f"  Register {release_id} in the sdlc-framework:\n"
+                f"  python sdlc_workflow.py framework-sync {release_id}\n"
+                f"  Ensure sdlc-framework backend is running on port 8002.",
                 code=1,
             )
 
@@ -893,6 +961,227 @@ def cmd_lessons_check(args: argparse.Namespace) -> None:
     sys.exit(result.returncode if result.returncode in (0, 1) else 0)
 
 
+def cmd_dashboard_check(args: argparse.Namespace) -> None:
+    """
+    Verify that SDLCDashboard.tsx contains entries for the release.
+    Required before Gate 3 (Build) can be approved.
+
+    Checks:
+      1. ReleaseKey type union includes the release key (e.g. 'R-16')
+      2. RELEASES array has an entry with key: 'R-16'
+      3. ITERATIONS array has at least one block with releaseKey: 'R-16'
+      4. RICEF array has at least one item with iteration: 'R-16'
+    """
+    state      = _load_state(args.release_id)
+    release_id = state["release_id"]         # e.g. "R-16"
+
+    # Resolve dashboard path
+    dashboard_path = (
+        Path(args.dashboard)
+        if args.dashboard
+        else SCRIPT_DIR.parent / "frontend" / "src" / "pages" / "SDLCDashboard.tsx"
+    )
+
+    print(_divider("═"))
+    print(f"  NOC Platform — Dashboard Check  [{release_id}]")
+    print(f"  File : {dashboard_path}")
+    print(_divider())
+
+    errors: list[str] = []
+
+    if not dashboard_path.exists():
+        errors.append(f"Dashboard file not found: {dashboard_path}")
+    else:
+        text = dashboard_path.read_text(encoding="utf-8")
+        key  = f"'{release_id}'"   # e.g. 'R-16'
+
+        # 1. ReleaseKey type
+        if key not in text or "ReleaseKey" not in text:
+            errors.append(f"ReleaseKey type does not include {key}")
+        else:
+            # Check it appears in the type definition line
+            for line in text.splitlines():
+                if "ReleaseKey" in line and "type" in line and key in line:
+                    break
+            else:
+                errors.append(f"{key} not found in ReleaseKey type union")
+
+        # 2. RELEASES array entry
+        releases_ok = False
+        for line in text.splitlines():
+            if f"key: {key}" in line:
+                releases_ok = True
+                break
+        if not releases_ok:
+            errors.append(f"RELEASES array has no entry with  key: {key}")
+
+        # 3. ITERATIONS array entry
+        iterations_ok = False
+        for line in text.splitlines():
+            if f"releaseKey: {key}" in line:
+                iterations_ok = True
+                break
+        if not iterations_ok:
+            errors.append(f"ITERATIONS array has no block with  releaseKey: {key}")
+
+        # 4. RICEF item
+        ricef_ok = False
+        for line in text.splitlines():
+            if f"iteration: {key}" in line:
+                ricef_ok = True
+                break
+        if not ricef_ok:
+            errors.append(f"RICEF array has no item with  iteration: {key}")
+
+    passed = len(errors) == 0
+
+    for e in errors:
+        print(f"  ✗ {e}")
+    if passed:
+        print(f"  ✓ All checks passed — SDLCDashboard.tsx is up to date for {release_id}")
+
+    # Record in state
+    state.setdefault("guardrails", {})
+    state["guardrails"]["dashboard_check"] = {
+        "passed":    passed,
+        "dashboard": str(dashboard_path),
+        "errors":    errors,
+        "ran_at":    _now(),
+    }
+    _save_state(state)
+
+    print(_divider())
+    if passed:
+        print(f"  Result recorded: PASS — Gate 3 (Build) dashboard-check prerequisite satisfied.")
+    else:
+        print(f"  Result recorded: FAIL — Gate 3 (Build) approval is BLOCKED until this passes.")
+        print(f"  Fix the issues above then re-run: python sdlc_workflow.py dashboard-check {release_id}")
+    print(_divider("═"))
+
+    sys.exit(0 if passed else 1)
+
+
+def cmd_framework_sync(args: argparse.Namespace) -> None:
+    """
+    Register the release in the sdlc-framework and verify the sync.
+    Required before Gate 5 (Deployment) can be approved.
+
+    Steps:
+      1. GET /api/v1/releases — look for a release with release_ref == release_id
+      2. If absent, GET /api/v1/projects — pick first project (or create one)
+      3. POST /api/v1/releases to create the release entry
+      4. Re-check and confirm it exists
+    """
+    import urllib.request
+    import urllib.error
+
+    state      = _load_state(args.release_id)
+    release_id = state["release_id"]
+    base_url   = (args.url or "http://localhost:8002").rstrip("/")
+
+    print(_divider("═"))
+    print(f"  NOC Platform — Framework Sync  [{release_id}]")
+    print(f"  Target : {base_url}")
+    print(_divider())
+
+    errors: list[str] = []
+    synced_id: str | None = None
+
+    def _api_get(path: str):
+        url = f"{base_url}{path}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read().decode())
+
+    def _api_post(path: str, payload: dict):
+        url  = f"{base_url}{path}"
+        data = json.dumps(payload).encode()
+        req  = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read().decode())
+
+    try:
+        # Step 1 — check if release already exists
+        releases = _api_get("/api/v1/releases")
+        existing = next(
+            (r for r in releases if r.get("release_ref") == release_id),
+            None
+        )
+
+        if existing:
+            synced_id = existing.get("id") or existing.get("release_ref")
+            print(f"  ✓ Release {release_id} already registered (id={synced_id})")
+        else:
+            print(f"  Release {release_id} not found — registering now...")
+
+            # Step 2 — find or create project
+            projects = _api_get("/api/v1/projects")
+            if projects:
+                project_id = projects[0]["id"]
+                print(f"  Using project: {projects[0].get('name','?')} (id={project_id})")
+            else:
+                proj = _api_post("/api/v1/projects", {
+                    "name":        "NOC Platform",
+                    "description": "Agentic NOC ticket resolution platform",
+                    "methodology": "agile",
+                })
+                project_id = proj["id"]
+                print(f"  Created project: NOC Platform (id={project_id})")
+
+            # Step 3 — create the release
+            rel = _api_post("/api/v1/releases", {
+                "project_id":   project_id,
+                "release_ref":  release_id,
+                "name":         state.get("release_name", release_id),
+            })
+            synced_id = rel.get("id") or rel.get("release_ref")
+            print(f"  ✓ Release {release_id} registered (id={synced_id})")
+
+        # Step 4 — re-verify
+        releases2 = _api_get("/api/v1/releases")
+        confirmed = any(r.get("release_ref") == release_id for r in releases2)
+        if not confirmed:
+            errors.append(f"POST succeeded but {release_id} not visible in GET /api/v1/releases")
+
+    except urllib.error.URLError as exc:
+        errors.append(
+            f"Could not reach sdlc-framework at {base_url}: {exc}\n"
+            f"  Ensure the sdlc-framework backend is running:  python -m uvicorn app.main:app --port 8002"
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Unexpected error: {exc}")
+
+    passed = len(errors) == 0
+
+    for e in errors:
+        print(f"  ✗ {e}")
+
+    # Record in state
+    state.setdefault("guardrails", {})
+    state["guardrails"]["framework_sync"] = {
+        "passed":      passed,
+        "base_url":    base_url,
+        "synced_id":   synced_id,
+        "errors":      errors,
+        "ran_at":      _now(),
+    }
+    _save_state(state)
+
+    print(_divider())
+    if passed:
+        print(f"  Result recorded: PASS — Gate 5 (Deployment) framework-sync prerequisite satisfied.")
+    else:
+        print(f"  Result recorded: FAIL — Gate 5 (Deployment) approval is BLOCKED until this passes.")
+        print(f"  Fix the issues above then re-run: python sdlc_workflow.py framework-sync {release_id}")
+    print(_divider("═"))
+
+    sys.exit(0 if passed else 1)
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     if not RELEASES_DIR.exists() or not any(RELEASES_DIR.iterdir()):
         print("No releases initialised yet.")
@@ -1018,6 +1307,24 @@ Gate prerequisites (guardrails):
     p_lc.add_argument("--min-entries", type=int, default=None,
                       help="Minimum LESSONS_LEARNED entries required (default: 1)")
 
+    # dashboard-check
+    p_dbc = sub.add_parser(
+        "dashboard-check",
+        help="Verify SDLCDashboard.tsx is updated with new release (Gate 3 / Build prerequisite)",
+    )
+    p_dbc.add_argument("release_id")
+    p_dbc.add_argument("--dashboard", default=None,
+                       help="Path to SDLCDashboard.tsx (default: frontend/src/pages/SDLCDashboard.tsx)")
+
+    # framework-sync
+    p_fs = sub.add_parser(
+        "framework-sync",
+        help="Register release in sdlc-framework and verify sync (Gate 5 / Deployment prerequisite)",
+    )
+    p_fs.add_argument("release_id")
+    p_fs.add_argument("--url", default="http://localhost:8002",
+                      help="sdlc-framework base URL (default: http://localhost:8002)")
+
     return p
 
 
@@ -1026,15 +1333,17 @@ def main() -> None:
     args   = parser.parse_args()
 
     dispatch = {
-        "init":            cmd_init,
-        "status":          cmd_status,
-        "submit":          cmd_submit,
-        "approve":         cmd_approve,
-        "check":           cmd_check,
-        "list":            cmd_list,
-        "data-check":      cmd_data_check,
-        "scan":            cmd_scan,
-        "lessons-check":   cmd_lessons_check,
+        "init":             cmd_init,
+        "status":           cmd_status,
+        "submit":           cmd_submit,
+        "approve":          cmd_approve,
+        "check":            cmd_check,
+        "list":             cmd_list,
+        "data-check":       cmd_data_check,
+        "scan":             cmd_scan,
+        "lessons-check":    cmd_lessons_check,
+        "dashboard-check":  cmd_dashboard_check,
+        "framework-sync":   cmd_framework_sync,
     }
     dispatch[args.command](args)
 

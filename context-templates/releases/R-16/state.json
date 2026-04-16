@@ -1,0 +1,143 @@
+{
+  "release_id": "R-16",
+  "release_name": "NOC Dashboard Web Server",
+  "created_at": "2026-04-16T07:38:03.707603+00:00",
+  "gates": {
+    "requirements": {
+      "status": "approved",
+      "deliverables": {
+        "requirements": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\requirements.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T07:57:35.202910+00:00"
+        }
+      },
+      "approval": {
+        "role": "Solution Architect",
+        "name": "Solution Architect",
+        "approved_at": "2026-04-16T07:58:00.492744+00:00"
+      }
+    },
+    "hld": {
+      "status": "approved",
+      "deliverables": {
+        "hld": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\hld.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T07:58:29.713809+00:00"
+        }
+      },
+      "approval": {
+        "role": "Solution Architect",
+        "name": "Solution Architect",
+        "approved_at": "2026-04-16T09:05:57.306691+00:00"
+      }
+    },
+    "build": {
+      "status": "approved",
+      "deliverables": {
+        "lld": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\lld.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:06:18.575149+00:00"
+        },
+        "tdd": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\tdd.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:06:20.220643+00:00"
+        }
+      },
+      "approval": {
+        "role": "Tech Lead",
+        "name": "Tech Lead",
+        "approved_at": "2026-04-16T09:06:44.808027+00:00"
+      }
+    },
+    "testing": {
+      "status": "approved",
+      "deliverables": {
+        "ut-report": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\ut-report.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:11.740581+00:00"
+        },
+        "sit-report": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\sit-report.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:13.395074+00:00"
+        },
+        "rai-compliance": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\rai-compliance.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:14.771708+00:00"
+        },
+        "accessibility": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\accessibility.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:16.254808+00:00"
+        }
+      },
+      "approval": {
+        "role": "Testing Lead",
+        "name": "Testing Lead",
+        "approved_at": "2026-04-16T09:07:33.911308+00:00"
+      }
+    },
+    "deployment": {
+      "status": "approved",
+      "deliverables": {
+        "deployment": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\deployment.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:51.930157+00:00"
+        },
+        "lessons-learned": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-16\\docs\\lessons-learned.md",
+          "valid": true,
+          "submitted_at": "2026-04-16T09:07:53.503352+00:00"
+        }
+      },
+      "approval": {
+        "role": "Tech Lead",
+        "name": "Tech Lead",
+        "approved_at": "2026-04-16T09:08:29.696862+00:00"
+      }
+    }
+  },
+  "guardrails": {
+    "scan": {
+      "passed": true,
+      "files": [
+        "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\app\\main.py",
+        "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\app\\config.py"
+      ],
+      "ran_at": "2026-04-16T07:38:05.921221+00:00",
+      "exit_code": 0
+    },
+    "data_check": {
+      "passed": true,
+      "db": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\data\\tickets.db",
+      "table": "telco_tickets",
+      "ran_at": "2026-04-16T08:02:56.818160+00:00",
+      "exit_code": 0
+    },
+    "lessons_check": {
+      "passed": true,
+      "ran_at": "2026-04-16T09:08:11.238522+00:00",
+      "exit_code": 0
+    },
+    "dashboard_check": {
+      "passed": true,
+      "dashboard": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\frontend\\src\\pages\\SDLCDashboard.tsx",
+      "errors": [],
+      "ran_at": "2026-04-16T09:13:37.158764+00:00"
+    },
+    "framework_sync": {
+      "passed": true,
+      "base_url": "http://localhost:8002",
+      "synced_id": "c2cdcbb3-4618-4aa2-8bbb-369068ccfeb1",
+      "errors": [],
+      "ran_at": "2026-04-16T09:14:08.245465+00:00"
+    }
+  }
+}

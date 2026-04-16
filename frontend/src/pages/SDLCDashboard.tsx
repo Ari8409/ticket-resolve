@@ -41,7 +41,7 @@ import { downloadSDLC } from '../utils/exportSDLC'
 
 // ─── Release metadata ─────────────────────────────────────────────────────────
 
-type ReleaseKey = 'All' | 'R-0' | 'R-1' | 'R-2' | 'R-3' | 'R-4' | 'R-5' | 'R-6' | 'R-7' | 'R-8' | 'R-9' | 'R-10' | 'R-11' | 'R-12' | 'R-13' | 'R-14' | 'R-15'
+type ReleaseKey = 'All' | 'R-0' | 'R-1' | 'R-2' | 'R-3' | 'R-4' | 'R-5' | 'R-6' | 'R-7' | 'R-8' | 'R-9' | 'R-10' | 'R-11' | 'R-12' | 'R-13' | 'R-14' | 'R-15' | 'R-16'
 
 const RELEASES: { key: ReleaseKey; label: string; shortName: string; color: string; activeCls: string; dotCls: string; gated?: boolean }[] = [
   { key: 'All', label: 'All Releases',                     shortName: 'All',                color: 'text-white',      activeCls: 'bg-slate-600 border-slate-400',            dotCls: 'bg-slate-400' },
@@ -61,6 +61,7 @@ const RELEASES: { key: ReleaseKey; label: string; shortName: string; color: stri
   { key: 'R-13', label: 'R-13 · UX & Accessibility',      shortName: 'UX / A11y',        color: 'text-sky-400',    activeCls: 'bg-sky-900/50 border-sky-500',             dotCls: 'bg-sky-500' },
   { key: 'R-14', label: 'R-14 · SDLC Gate Workflow',      shortName: 'Gate Workflow',    color: 'text-emerald-400', activeCls: 'bg-emerald-900/50 border-emerald-500',    dotCls: 'bg-emerald-500', gated: true },
   { key: 'R-15', label: 'R-15 · SLA Tracking',            shortName: 'SLA Tracking',     color: 'text-red-400',    activeCls: 'bg-red-900/50 border-red-500',             dotCls: 'bg-red-500',    gated: true },
+  { key: 'R-16', label: 'R-16 · NOC Dashboard Web Server', shortName: 'Web Server',       color: 'text-violet-400', activeCls: 'bg-violet-900/50 border-violet-500',       dotCls: 'bg-violet-500', gated: true },
 ]
 
 // ─── Iterations ───────────────────────────────────────────────────────────────
@@ -552,6 +553,29 @@ const ITERATIONS = [
     ricef: ['I-007', 'F-008', 'C-005'],
     metrics: ['3 new endpoints', '6 files changed', '73.9% SLA compliance', '307 breaches across 1,177 resolved tickets'],
   },
+  {
+    releaseKey: 'R-16' as ReleaseKey,
+    label: 'R-16',
+    type: 'NOC Dashboard Web Server',
+    instruction: 'Configure FastAPI to serve the built React SPA directly, eliminating the Vite dev server in production. Add StaticFiles mount at /assets, GET / and GET /{full_path:path} SPA catch-all routes in app/main.py, SERVE_FRONTEND and FRONTEND_DIST_DIR config fields, update Dockerfile to copy frontend/dist/ and expose port 8003, and add startup.sh that builds the frontend then starts uvicorn on port 8003.',
+    icon: <BarChart3 size={14} />,
+    color: 'text-violet-400',
+    bg: 'bg-violet-900/30 border-violet-700/40',
+    techStack: ['FastAPI', 'Starlette StaticFiles', 'Vite', 'React 18', 'TypeScript', 'Docker', 'uvicorn'],
+    timeTakenMin: 25,
+    tokensUsed: 120000,
+    apiEndpointsAdded: 0,
+    filesChanged: 5,
+    delivered: [
+      'app/main.py — _dist_dir() helper, _FALLBACK_HTML constant, StaticFiles mount at /assets, GET / spa_root(), GET /{full_path:path} spa_catchall(), CORS tightened to localhost:8003',
+      'app/config.py — SERVE_FRONTEND: bool = True and FRONTEND_DIST_DIR: str = "" added to Settings',
+      'frontend/vite.config.ts — explicit build: { outDir: "dist", emptyOutDir: true }, proxy target updated to port 8003',
+      'Dockerfile — COPY frontend/dist/ ./frontend/dist/, EXPOSE 8003, CMD uvicorn on port 8003',
+      'startup.sh — new file: builds frontend via vite build then starts python -m uvicorn on port 8003',
+    ],
+    ricef: ['I-008'],
+    metrics: ['0 new API endpoints', '5 files changed', 'unified port 8003', 'single-command deployment via startup.sh'],
+  },
 ]
 
 // ─── RICEF ────────────────────────────────────────────────────────────────────
@@ -609,6 +633,7 @@ const RICEF: RICEFItem[] = [
   { id: 'I-007', category: 'I', component: 'SLA Tracking API',                description: '3 endpoints: GET /sla/summary (JULIANDAY compliance per fault type), GET /sla/targets, PUT /sla/targets/{fault_type}; sla_targets table seeded with 12 fault types on startup via main.py lifespan', file: 'app/api/v1/sla.py · app/main.py',                              complexity: 'Medium', status: 'Complete', iteration: 'R-15' },
   { id: 'F-008', category: 'F', component: 'SLA Compliance Dashboard Widget', description: '3 KPI cards (compliance %, breach count, avg hours) + Recharts horizontal BarChart; colour-coded bars (green ≥90% / amber 70–89% / red <70%); ReferenceLine at 90%; custom tooltip; full loading/error/empty states', file: 'frontend/src/components/SLAWidget.tsx',                         complexity: 'High',   status: 'Complete', iteration: 'R-15' },
   { id: 'C-005', category: 'C', component: 'SLA Targets Seed Data',           description: '12 fault-type SLA target rows seeded in sla_targets table; 1,177 resolved ticket updated_at values reseeded with realistic elapsed-time offsets producing 73.9% compliance / 307 breaches', file: 'app/api/v1/sla.py · DEFAULT_TARGETS · data/tickets.db',        complexity: 'Low',    status: 'Complete', iteration: 'R-15' },
+  { id: 'I-008', category: 'I', component: 'NOC Dashboard Web Server',        description: 'FastAPI serves built React SPA via StaticFiles mount at /assets and SPA catch-all routes; unified single port 8003 replaces dual-process Vite+uvicorn setup; startup.sh builds frontend and starts uvicorn in one command', file: 'app/main.py · app/config.py · frontend/vite.config.ts · Dockerfile · startup.sh', complexity: 'Low', status: 'Complete', iteration: 'R-16' },
 ]
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -1463,6 +1488,31 @@ const LESSONS_LEARNED: {
     fix: 'Updated the Testing Lead checklist to require actual captured command output per test case — pasted curl response bodies, HTTP status lines, or DB query results — not assumed outcomes. Added a specific requirement: at least one test case must paste the uvicorn startup log confirming Application startup complete with zero ERROR lines. Added lessons_check.py guardrail: Gate 5 (Deployment) is blocked if LESSONS_LEARNED in SDLCDashboard.tsx has no entries for the release being deployed, ensuring post-mortems are completed before the release is declared done. Lesson: test reports are evidence, not predictions — capturing and pasting actual output is the minimum standard.',
     iteration: 'R-15',
   },
+  // ── R-16 ─────────────────────────────────────────────────────────────────────
+  {
+    severity: 'High',
+    area: 'FastAPI / Routing',
+    title: 'R-16: SPA catch-all route must be registered last to avoid shadowing API routes',
+    problem: 'FastAPI evaluates routes in registration order. A GET /{full_path:path} catch-all registered before include_router calls would intercept all /api/v1/ requests and return HTML instead of JSON, silently breaking every API client with a 200 text/html response. An early prototype of R-16 registered the catch-all before include_router — all API calls returned 200 with no error, making the bug difficult to detect without inspecting response bodies.',
+    fix: 'Moved SPA catch-all registration to after all include_router calls in app/main.py. Added code comment "# SPA catch-all — must be last route" to prevent future regression. Route registration order is now enforced by code review: API routers first, StaticFiles mount second, SPA root third, SPA catch-all last. Lesson: FastAPI catch-all routes are greedy — always register them last and verify API priority with explicit smoke tests.',
+    iteration: 'R-16',
+  },
+  {
+    severity: 'Medium',
+    area: 'FastAPI / Reliability',
+    title: 'R-16: Missing frontend dist causes FileNotFoundError 500 without _FALLBACK_HTML',
+    problem: 'Without the _FALLBACK_HTML constant, spa_root() would raise FileNotFoundError on any GET / request if frontend/dist/index.html did not exist (e.g., on a fresh clone before running startup.sh). This resulted in a 500 Internal Server Error with an unhelpful Python traceback — no indication of what was missing or how to fix it.',
+    fix: 'Added _FALLBACK_HTML inline constant and wrapped all index.html reads in Path.exists() checks; returns fallback HTML with actionable "Run: bash startup.sh" instructions instead of raising exceptions. Infrastructure releases should always degrade gracefully with human-readable guidance. Lesson: file reads in web route handlers must handle missing files explicitly — never let FileNotFoundError propagate to a 500.',
+    iteration: 'R-16',
+  },
+  {
+    severity: 'Low',
+    area: 'Frontend / Developer Experience',
+    title: 'R-16: Vite proxy port not updated atomically with server port change',
+    problem: 'After R-16 changed the backend port from 8000 to 8003, the Vite dev server proxy in vite.config.ts still pointed to http://localhost:8000. All /api/ requests failed during local frontend development (npm run dev) until the proxy target was manually updated. The error was not immediately obvious because Vite proxied silently and browsers showed ECONNREFUSED rather than a clear "wrong port" message.',
+    fix: 'Updated vite.config.ts proxy target to http://localhost:8003 in the same commit as the port change. Added comment "# Keep in sync with startup.sh" adjacent to the port value. Port change checklist: grep for all port references across startup.sh, Dockerfile, vite.config.ts, and any API client configs before committing. Lesson: port configuration is duplicated across multiple files — treat a port change as a cross-file refactor, not a single-file edit.',
+    iteration: 'R-16',
+  },
 ]
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -1544,7 +1594,7 @@ export default function SDLCDashboard() {
           </button>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-green-900/30 border border-green-700/40 rounded-lg">
             <CheckCircle2 size={14} className="text-green-400" />
-            <span className="text-xs font-semibold text-green-400">R-0 – R-15 COMPLETE</span>
+            <span className="text-xs font-semibold text-green-400">R-0 – R-16 COMPLETE</span>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-900/30 border border-emerald-700/40 rounded-lg">
             <ClipboardList size={14} className="text-emerald-400" />
