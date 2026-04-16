@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     EMBEDDING_PIPELINE_TOP_K: int = 3           # Resolved matches returned per ticket
     EMBEDDING_PIPELINE_THRESHOLD: float = 0.0   # Minimum cosine similarity (0 = return all)
 
+    # R-16: Production web server
+    SERVE_FRONTEND: bool = True
+    FRONTEND_DIST_DIR: str = ""   # Empty = auto-resolve to <repo-root>/frontend/dist
+
 
 @lru_cache
 def get_settings() -> Settings:
