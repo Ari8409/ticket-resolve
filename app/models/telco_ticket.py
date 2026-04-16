@@ -75,15 +75,16 @@ class TelcoTicketStatus(str, Enum):
     Pending    → PENDING
     (+ internal pipeline statuses below)
     """
-    OPEN        = "open"
-    ASSIGNED    = "assigned"
-    PENDING     = "pending"
-    IN_PROGRESS = "in_progress"
-    CLEARED     = "cleared"
-    RESOLVED    = "resolved"
-    CLOSED      = "closed"
-    ESCALATED   = "escalated"
-    FAILED      = "failed"      # internal: pipeline error during processing
+    OPEN           = "open"
+    ASSIGNED       = "assigned"
+    PENDING        = "pending"
+    IN_PROGRESS    = "in_progress"
+    CLEARED        = "cleared"
+    RESOLVED       = "resolved"
+    CLOSED         = "closed"
+    ESCALATED      = "escalated"
+    FAILED         = "failed"           # internal: pipeline error during processing
+    PENDING_REVIEW = "pending_review"   # flagged: no SOP/history match — needs human triage
 
 
 class NetworkType(str, Enum):

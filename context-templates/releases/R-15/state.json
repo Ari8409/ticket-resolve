@@ -1,0 +1,112 @@
+{
+  "release_id": "R-15",
+  "release_name": "SLA Tracking Table & Dashboard Widget",
+  "created_at": "2026-04-14T07:06:20.917556+00:00",
+  "gates": {
+    "requirements": {
+      "status": "approved",
+      "deliverables": {
+        "requirements": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\requirements.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:07:28.715721+00:00"
+        }
+      },
+      "approval": {
+        "role": "Solution Architect",
+        "name": "Solution Architect",
+        "approved_at": "2026-04-14T07:07:29.658075+00:00"
+      }
+    },
+    "hld": {
+      "status": "approved",
+      "deliverables": {
+        "hld": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\hld.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:07:30.777446+00:00"
+        }
+      },
+      "approval": {
+        "role": "Solution Architect",
+        "name": "Solution Architect",
+        "approved_at": "2026-04-14T07:07:32.101352+00:00"
+      }
+    },
+    "build": {
+      "status": "approved",
+      "deliverables": {
+        "lld": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\lld.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:10:47.677193+00:00"
+        },
+        "tdd": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\tdd.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:10:48.762424+00:00"
+        }
+      },
+      "approval": {
+        "role": "Tech Lead",
+        "name": "Tech Lead",
+        "approved_at": "2026-04-14T07:10:49.964639+00:00"
+      }
+    },
+    "testing": {
+      "status": "approved",
+      "deliverables": {
+        "ut-report": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\ut-report.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:12:53.719935+00:00"
+        },
+        "sit-report": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\sit-report.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:12:54.952542+00:00"
+        },
+        "rai-compliance": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\rai-compliance.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:12:56.345351+00:00"
+        },
+        "accessibility": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\accessibility.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:12:57.871574+00:00"
+        }
+      },
+      "approval": {
+        "role": "Testing Lead",
+        "name": "Testing Lead",
+        "approved_at": "2026-04-14T07:12:59.276907+00:00"
+      }
+    },
+    "deployment": {
+      "status": "approved",
+      "deliverables": {
+        "deployment": {
+          "path": "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\context-templates\\releases\\R-15\\docs\\deployment.md",
+          "valid": true,
+          "submitted_at": "2026-04-14T07:13:00.734190+00:00"
+        }
+      },
+      "approval": {
+        "role": "Tech Lead",
+        "name": "Tech Lead",
+        "approved_at": "2026-04-14T07:13:02.048635+00:00"
+      }
+    }
+  },
+  "guardrails": {
+    "scan": {
+      "passed": true,
+      "files": [
+        "C:\\Users\\aritra.e.chatterjee\\R&D\\ticket-resolve\\app\\api\\v1\\sla.py"
+      ],
+      "ran_at": "2026-04-14T07:33:57.809944+00:00",
+      "exit_code": 0
+    }
+  }
+}

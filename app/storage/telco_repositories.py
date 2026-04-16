@@ -212,6 +212,13 @@ class TelcoTicketRow(SQLModel, table=True):
         index=True,
     )
 
+    # --- Human-in-the-loop triage fields ---
+    # Set when pipeline cannot resolve (no SOP match + no history + low confidence).
+    # pending_review_reasons: JSON list[str] of UnresolvableReason values.
+    pending_review_reasons: Optional[str] = Field(default=None, max_length=512)
+    assigned_to:            Optional[str] = Field(default=None, max_length=128)
+    assigned_at:            Optional[datetime] = Field(default=None)
+
     # --- Audit ---
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -360,9 +367,15 @@ class TelcoTicketRepository:
             "remarks":             row.remarks,
             "resolution":          row.resolution,
             "resolution_code":     row.resolution_code,
-            "sop_id":              row.sop_id,
-            "created_at":          row.created_at,
-            "updated_at":          row.updated_at,
+            "sop_id":                  row.sop_id,
+            "pending_review_reasons":  (
+                json.loads(row.pending_review_reasons)
+                if row.pending_review_reasons else []
+            ),
+            "assigned_to":             row.assigned_to,
+            "assigned_at":             row.assigned_at,
+            "created_at":              row.created_at,
+            "updated_at":              row.updated_at,
         }
 
     # --- write operations ---------------------------------------------------
@@ -375,14 +388,24 @@ class TelcoTicketRepository:
         await self._session.refresh(row)
         return row.ticket_id
 
-    async def update(self, ticket_id: str, patch: TelcoTicketUpdate) -> Optional[dict]:
+    async def update(
+        self,
+        ticket_id:  str,
+        patch:      TelcoTicketUpdate,
+        changed_by: Optional[str] = None,
+    ) -> Optional[dict]:
         """Apply partial update. Returns updated dict or None if not found."""
+        from app.storage.audit_store import AuditLogRepository, EventType
+
         result = await self._session.execute(
             select(TelcoTicketRow).where(TelcoTicketRow.ticket_id == ticket_id)
         )
         row = result.scalar_one_or_none()
         if not row:
             return None
+
+        from_status = row.status
+        status_changed = patch.status is not None and patch.status.value != from_status
 
         if patch.status is not None:
             row.status = patch.status.value
@@ -408,6 +431,17 @@ class TelcoTicketRepository:
         row.updated_at = datetime.utcnow()
         await self._session.commit()
         await self._session.refresh(row)
+
+        audit = AuditLogRepository(self._session)
+        if status_changed:
+            await audit.append(
+                ticket_id=ticket_id,
+                event_type=EventType.STATUS_CHANGE,
+                from_status=from_status,
+                to_status=patch.status.value,
+                changed_by=changed_by,
+            )
+
         return self._row_to_dict(row)
 
     # --- read operations ----------------------------------------------------
@@ -460,16 +494,91 @@ class TelcoTicketRepository:
         )
         return [self._row_to_dict(r) for r in result.scalars().all()]
 
-    async def update_status(self, ticket_id: str, status: TelcoTicketStatus) -> None:
-        """Update ticket status in-place."""
+    async def update_status(
+        self,
+        ticket_id:  str,
+        status:     TelcoTicketStatus,
+        changed_by: Optional[str] = None,
+        reason:     Optional[str] = None,
+    ) -> None:
+        """Update ticket status in-place and append an immutable audit row."""
+        from app.storage.audit_store import AuditLogRepository, EventType
+
         result = await self._session.execute(
             select(TelcoTicketRow).where(TelcoTicketRow.ticket_id == ticket_id)
         )
         row = result.scalar_one_or_none()
         if row:
+            from_status = row.status
             row.status = status.value
             row.updated_at = datetime.utcnow()
             await self._session.commit()
+            await AuditLogRepository(self._session).append(
+                ticket_id=ticket_id,
+                event_type=EventType.STATUS_CHANGE,
+                from_status=from_status,
+                to_status=status.value,
+                changed_by=changed_by,
+                reason=reason,
+            )
+
+    async def flag_pending_review(
+        self,
+        ticket_id:  str,
+        reasons:    list[str],
+        changed_by: Optional[str] = None,
+    ) -> None:
+        """
+        Set ticket status to PENDING_REVIEW and record why the pipeline
+        could not auto-resolve it (list of UnresolvableReason values).
+        """
+        from app.storage.audit_store import AuditLogRepository, EventType
+
+        result = await self._session.execute(
+            select(TelcoTicketRow).where(TelcoTicketRow.ticket_id == ticket_id)
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            from_status = row.status
+            row.status = TelcoTicketStatus.PENDING_REVIEW.value
+            row.pending_review_reasons = json.dumps(reasons)
+            row.updated_at = datetime.utcnow()
+            await self._session.commit()
+            await AuditLogRepository(self._session).append(
+                ticket_id=ticket_id,
+                event_type=EventType.FLAG_REVIEW,
+                from_status=from_status,
+                to_status=TelcoTicketStatus.PENDING_REVIEW.value,
+                changed_by=changed_by or "pipeline",
+                reason=json.dumps(reasons),
+            )
+
+    async def assign_ticket(
+        self, ticket_id: str, assign_to: str
+    ) -> Optional[dict]:
+        """Assign a PENDING_REVIEW ticket to a NOC engineer or group."""
+        result = await self._session.execute(
+            select(TelcoTicketRow).where(TelcoTicketRow.ticket_id == ticket_id)
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+        row.assigned_to = assign_to
+        row.assigned_at = datetime.utcnow()
+        row.updated_at  = datetime.utcnow()
+        await self._session.commit()
+        await self._session.refresh(row)
+        return self._row_to_dict(row)
+
+    async def list_pending_review(self, limit: int = 100) -> list[dict]:
+        """Return all tickets in PENDING_REVIEW status, oldest-first."""
+        result = await self._session.execute(
+            select(TelcoTicketRow)
+            .where(TelcoTicketRow.status == TelcoTicketStatus.PENDING_REVIEW.value)
+            .order_by(TelcoTicketRow.timestamp.asc())
+            .limit(limit)
+        )
+        return [self._row_to_dict(r) for r in result.scalars().all()]
 
     async def save_dispatch_decision(self, ticket_id: str, decision) -> None:
         """
@@ -530,6 +639,94 @@ class TelcoTicketRepository:
         )
         self._session.add(row)
         await self._session.commit()
+
+    async def list_tickets(
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """
+        Paginated list of telco tickets with optional status filter.
+        Returns (rows, total_count).
+        """
+        from sqlalchemy import func
+
+        base_query = select(TelcoTicketRow)
+        count_query = select(func.count()).select_from(TelcoTicketRow)
+
+        if status:
+            base_query  = base_query.where(TelcoTicketRow.status == status)
+            count_query = count_query.where(TelcoTicketRow.status == status)
+
+        count_result = await self._session.execute(count_query)
+        total = count_result.scalar() or 0
+
+        rows_result = await self._session.execute(
+            base_query
+            .order_by(TelcoTicketRow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = [self._row_to_dict(r) for r in rows_result.scalars().all()]
+        return rows, total
+
+    async def get_stats(self) -> dict:
+        """
+        Return ticket counts grouped by status plus a total count.
+        Also returns by_fault_type, by_alarm, and by_network breakdowns.
+        Used by the NOC dashboard summary cards and charts.
+
+        Uses raw SQL (text()) to avoid Python 3.14 + SQLModel instrumentation
+        issues where ORM column attributes resolve to None in select().
+        """
+        from sqlalchemy import text
+
+        # Status breakdown
+        status_rows = (await self._session.execute(
+            text("SELECT status, COUNT(*) AS cnt FROM telco_tickets GROUP BY status")
+        )).all()
+        counts: dict[str, int] = {row[0]: row[1] for row in status_rows}
+
+        open_statuses = {
+            TelcoTicketStatus.OPEN.value,
+            TelcoTicketStatus.ASSIGNED.value,
+            TelcoTicketStatus.IN_PROGRESS.value,
+        }
+        open_count = sum(counts.get(s, 0) for s in open_statuses)
+
+        # Fault type breakdown
+        ft_rows = (await self._session.execute(
+            text("SELECT fault_type, COUNT(*) AS cnt FROM telco_tickets GROUP BY fault_type ORDER BY cnt DESC")
+        )).all()
+        by_fault_type = {row[0]: row[1] for row in ft_rows}
+
+        # Top 15 alarm names
+        alarm_rows = (await self._session.execute(
+            text("SELECT alarm_name, COUNT(*) AS cnt FROM telco_tickets WHERE alarm_name IS NOT NULL GROUP BY alarm_name ORDER BY cnt DESC LIMIT 15")
+        )).all()
+        by_alarm = {row[0]: row[1] for row in alarm_rows}
+
+        # Network type breakdown
+        net_rows = (await self._session.execute(
+            text("SELECT network_type, COUNT(*) AS cnt FROM telco_tickets WHERE network_type IS NOT NULL GROUP BY network_type ORDER BY cnt DESC")
+        )).all()
+        by_network = {row[0]: row[1] for row in net_rows}
+
+        return {
+            "total":          sum(counts.values()),
+            "open":           open_count,
+            "in_progress":    counts.get(TelcoTicketStatus.IN_PROGRESS.value, 0),
+            "pending_review": counts.get(TelcoTicketStatus.PENDING_REVIEW.value, 0),
+            "resolved":       counts.get(TelcoTicketStatus.RESOLVED.value, 0),
+            "escalated":      counts.get(TelcoTicketStatus.ESCALATED.value, 0),
+            "closed":         counts.get(TelcoTicketStatus.CLOSED.value, 0),
+            "failed":         counts.get(TelcoTicketStatus.FAILED.value, 0),
+            "by_status":      counts,
+            "by_fault_type":  by_fault_type,
+            "by_alarm":       by_alarm,
+            "by_network":     by_network,
+        }
 
     async def get_dispatch_decision(self, ticket_id: str) -> Optional[dict]:
         """Return the persisted DispatchDecision dict for a ticket, or None."""

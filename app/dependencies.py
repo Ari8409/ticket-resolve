@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Annotated
 
 import chromadb
+from chromadb.api.models.AsyncCollection import AsyncCollection as ChromaAsyncCollection
 from fastapi import Depends, Request
 from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,10 +24,13 @@ from app.matching.ticket_store import TicketStore
 from app.recommendation.agent import ResolutionAgent
 from app.review.feedback import ResolutionFeedbackIndexer
 from app.review.handler import ReviewHandler
+from app.review.triage import HumanTriageHandler
 from app.sop.retriever import SOPRetriever
 from app.sop.sop_store import SOPStore
 from app.storage.repositories import TicketRepository, get_session
 from app.storage.telco_repositories import TelcoTicketRepository
+from app.storage.audit_store import AuditLogRepository
+from app.storage.chat_feedback_store import ChatFeedbackRepository
 
 
 # ---------------------------------------------------------------------------
@@ -40,12 +44,12 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 # Chroma collections
 # ---------------------------------------------------------------------------
 
-async def get_ticket_collection(request: Request, settings: SettingsDep) -> chromadb.AsyncCollection:
+async def get_ticket_collection(request: Request, settings: SettingsDep) -> ChromaAsyncCollection:
     client: chromadb.AsyncHttpClient = request.app.state.chroma
     return await client.get_collection(settings.TICKET_COLLECTION)
 
 
-async def get_sop_collection(request: Request, settings: SettingsDep) -> chromadb.AsyncCollection:
+async def get_sop_collection(request: Request, settings: SettingsDep) -> ChromaAsyncCollection:
     client: chromadb.AsyncHttpClient = request.app.state.chroma
     return await client.get_collection(settings.SOP_COLLECTION)
 
@@ -90,13 +94,13 @@ def get_st_embedder(settings: SettingsDep) -> SentenceTransformerEmbedder:
 
 
 async def get_ticket_store(
-    collection: Annotated[chromadb.AsyncCollection, Depends(get_ticket_collection)],
+    collection: Annotated[ChromaAsyncCollection, Depends(get_ticket_collection)],
 ) -> TicketStore:
     return TicketStore(collection)
 
 
 async def get_sop_store(
-    collection: Annotated[chromadb.AsyncCollection, Depends(get_sop_collection)],
+    collection: Annotated[ChromaAsyncCollection, Depends(get_sop_collection)],
 ) -> SOPStore:
     return SOPStore(collection)
 
@@ -163,6 +167,16 @@ async def get_repo() -> TicketRepository:
 async def get_telco_repo() -> TelcoTicketRepository:
     async with get_session() as session:
         yield TelcoTicketRepository(session)
+
+
+async def get_audit_repo() -> AuditLogRepository:
+    async with get_session() as session:
+        yield AuditLogRepository(session)
+
+
+async def get_chat_feedback_repo() -> ChatFeedbackRepository:
+    async with get_session() as session:
+        yield ChatFeedbackRepository(session)
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +255,22 @@ async def get_review_handler(
         sop_retriever=sop_retriever,
         feedback_indexer=feedback_indexer,
     )
+
+
+async def get_triage_handler(
+    repo: Annotated[TelcoTicketRepository, Depends(get_telco_repo)],
+    matching_engine: Annotated[MatchingEngine, Depends(get_matching_engine)],
+) -> HumanTriageHandler:
+    """
+    Provides a HumanTriageHandler for the PENDING_REVIEW queue.
+
+    Wires the telco repo (for ticket reads/writes and triage column updates)
+    together with a ResolutionFeedbackIndexer so that resolutions submitted
+    via /manual-resolve are indexed into Chroma as training signals — exactly
+    the same path used by the automated pipeline's approve flow.
+    """
+    feedback_indexer = ResolutionFeedbackIndexer(matching_engine=matching_engine)
+    return HumanTriageHandler(repo=repo, feedback_indexer=feedback_indexer)
 
 
 async def get_correlation_engine(

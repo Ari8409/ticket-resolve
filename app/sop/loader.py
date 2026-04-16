@@ -2,7 +2,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.matching.embedder import TicketEmbedder
 from app.sop.sop_store import SOPStore

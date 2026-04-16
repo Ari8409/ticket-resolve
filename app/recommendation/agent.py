@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import logging
 
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
 from app.classifier.models import ClassificationResult
 from app.correlation.models import CorrelationContext, DispatchDecision, DispatchMode
@@ -73,25 +73,17 @@ class ResolutionAgent:
         self._matching      = matching_engine
         self._structuring   = build_structuring_chain(llm)
 
-    def _build_executor(self, correlation_ctx: CorrelationContext | None) -> AgentExecutor:
+    def _build_executor(self, correlation_ctx: CorrelationContext | None):
+        """Build a LangGraph react agent (LangChain ≥ 1.x replacement for AgentExecutor)."""
         tools = build_agent_tools(
             sop_retriever=self._sop_retriever,
             matching_engine=self._matching,
             correlation_ctx=correlation_ctx,
         )
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
-            ("human", "{ticket_context}"),
-            MessagesPlaceholder("agent_scratchpad"),
-        ])
-        agent = create_tool_calling_agent(self._llm, tools, prompt)
-        return AgentExecutor(
-            agent=agent,
+        return create_react_agent(
+            model=self._llm,
             tools=tools,
-            verbose=True,
-            max_iterations=8,
-            handle_parsing_errors=True,
-            return_intermediate_steps=False,
+            prompt=SYSTEM_PROMPT,
         )
 
     def _build_context(
@@ -152,8 +144,15 @@ class ResolutionAgent:
         context  = self._build_context(ticket, correlation_ctx, classifier_result)
 
         try:
-            raw = await executor.ainvoke({"ticket_context": context})
-            output_text = raw.get("output", "")
+            # LangGraph react agent accepts {"messages": [...]}
+            raw = await executor.ainvoke(
+                {"messages": [HumanMessage(content=context)]},
+                {"recursion_limit": 16},
+            )
+            # Final AI message is the last in the messages list
+            messages = raw.get("messages", [])
+            ai_messages = [m for m in messages if hasattr(m, "content") and not isinstance(m, HumanMessage)]
+            output_text = ai_messages[-1].content if ai_messages else ""
         except Exception as exc:
             log.error("Agent execution failed for ticket %s: %s", ticket_id, exc, exc_info=True)
             output_text = ""

@@ -14,6 +14,7 @@ from app.storage.chroma_client import (
     get_chroma_client,
 )
 from app.storage.repositories import create_tables, init_engine
+from app.api.v1.sla import ensure_sla_table
 
 
 @asynccontextmanager
@@ -24,6 +25,10 @@ async def lifespan(app: FastAPI):
     # Initialize async DB
     init_engine(settings.DATABASE_URL)
     await create_tables()
+
+    # Initialize SLA targets table (R-15) — APIRouter.on_event is not supported;
+    # must be called from the main app lifespan instead.
+    await ensure_sla_table()
 
     # Initialize Chroma
     chroma = await get_chroma_client(settings.CHROMA_HOST, settings.CHROMA_PORT)

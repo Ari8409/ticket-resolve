@@ -1,12 +1,13 @@
+# Python
 .env
+.env.*
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-data/chroma_db/
-data/tickets.db
 *.egg-info/
 dist/
 build/
@@ -14,4 +15,45 @@ build/
 htmlcov/
 .venv/
 venv/
+env/
 *.log
+
+# Database & vector store
+data/chroma_db/
+data/chroma/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+.chroma/
+ticket-resolve.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Scratch / generated files
+*.csv
+capture_screenshots.py
+generate_*.py
+sdlc_part*.txt
+vite-*.txt
+check_locations.py
+
+# Binary / presentation files
+*.pptx
+*.pdf
+*.xlsx
+screenshots/
+
+# Node / frontend build output
+node_modules/
+frontend/dist/
+frontend/build/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Claude Code internal
+.claude/

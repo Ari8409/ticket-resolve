@@ -31,6 +31,7 @@ so it surfaces clearly in similarity search result previews.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from app.matching.engine import MatchingEngine
 from app.models.telco_ticket import TelcoTicketCreate
@@ -163,3 +164,101 @@ class ResolutionFeedbackIndexer:
             # Truncate to 120 chars for the metadata preview
             parts.append(ticket.resolution[:120])
         return " — ".join(parts) if parts else "Resolved"
+
+    # ------------------------------------------------------------------
+    # Chat feedback indexing
+    # ------------------------------------------------------------------
+
+    async def index_chat_feedback(
+        self,
+        message_id: str,
+        query_text: str,
+        response_text: str,
+        ticket_context: Optional[str] = None,
+        comment: Optional[str] = None,
+        engineer_id: Optional[str] = None,
+    ) -> None:
+        """
+        Index a positively-rated chat exchange into Chroma as a training signal.
+
+        Uses feedback_source="chat" metadata so future queries can retrieve
+        only chat feedback (not ticket resolutions) via find_similar_with_filter.
+        The resolved flag is set to False — these are not confirmed ticket
+        resolutions, so they won't surface in find_similar_resolved() searches.
+        """
+        doc = f"Q: {query_text}\nA: {response_text}"
+        if comment:
+            doc += f"\nEngineer note: {comment}"
+
+        metadata: dict = {
+            "ticket_id":          ticket_context or f"chat:{message_id}",
+            "title":              query_text[:120],
+            "priority":           "medium",
+            "category":           "chat_feedback",
+            "resolution_summary": response_text[:300],
+            "resolved":           False,
+            "feedback_source":    "chat",
+            "message_id":         message_id,
+        }
+        if engineer_id:
+            metadata["engineer_id"] = engineer_id
+
+        await self._engine.index_raw_doc(
+            doc_id=f"chat:{message_id}",
+            embedding_text=doc,
+            metadata=metadata,
+        )
+        log.info(
+            "Indexed positively-rated chat exchange as training signal "
+            "(message_id=%s, ticket_context=%s)",
+            message_id, ticket_context or "none",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Context retrieval helper
+# ---------------------------------------------------------------------------
+
+async def retrieve_chat_feedback_context(
+    query: str,
+    matching_engine: MatchingEngine,
+    n_results: int = 3,
+) -> str:
+    """
+    Query Chroma for the most relevant past positively-rated chat exchanges.
+
+    Returns a formatted string ready to prepend to an assistant reply as
+    "Related feedback from engineers" context.  Falls back to empty string
+    on any error or when no relevant feedback exists yet.
+    """
+    try:
+        results = await matching_engine.find_similar_with_filter(
+            query=query,
+            where={"feedback_source": {"$eq": "chat"}},
+            n_results=n_results,
+        )
+        if not results:
+            return ""
+
+        lines = ["📌 **Related feedback from engineers on similar questions:**", ""]
+        for r in results:
+            doc = r.get("document", "")
+            score = r.get("score", 0.0)
+            if not doc or score < 0.3:
+                continue
+            # Parse Q: / A: lines back out for formatting
+            q_part, a_part = "", ""
+            for line in doc.split("\n"):
+                if line.startswith("Q: "):
+                    q_part = line[3:].strip()
+                elif line.startswith("A: "):
+                    a_part = line[3:100].strip()
+            if q_part and a_part:
+                lines.append(f"> **Q:** {q_part[:80]}")
+                lines.append(f"> **A:** {a_part}{'…' if len(a_part) >= 97 else ''}")
+                lines.append("")
+
+        return "\n".join(lines).strip() if len(lines) > 2 else ""
+    except Exception as exc:
+        log.debug("retrieve_chat_feedback_context failed: %s", exc)
+        return ""

@@ -58,8 +58,11 @@ def init_engine(database_url: str):
 async def create_tables():
     # Import all SQLModel table modules so their metadata is registered
     import app.storage.telco_repositories  # noqa: F401  — SOPRow, TelcoTicketRow, TelcoDispatchDecisionRow
+    import app.storage.audit_store         # noqa: F401  — TicketAuditLogRow
+    import app.storage.chat_feedback_store # noqa: F401  — ChatFeedbackRow
     import app.alarms.store               # noqa: F401  — AlarmRow
     import app.maintenance.store          # noqa: F401  — MaintenanceRow
+    import app.storage.network_store      # noqa: F401  — NetworkNodeRow, NetworkEdgeRow
     async with _engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 

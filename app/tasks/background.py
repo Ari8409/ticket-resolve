@@ -27,6 +27,7 @@ from app.correlation.models import DispatchDecision
 from app.matching.engine import MatchingEngine
 from app.models.telco_ticket import TelcoTicketCreate, TelcoTicketStatus
 from app.recommendation.agent import ResolutionAgent
+from app.review.triage import is_unresolvable
 from app.storage.telco_repositories import TelcoTicketRepository
 
 log = logging.getLogger(__name__)
@@ -119,17 +120,60 @@ async def run_telco_resolution_pipeline(
             classifier_result=classifier_result,
         )
         await repo.save_dispatch_decision(ticket_id, decision)
-        await repo.update_status(ticket_id, TelcoTicketStatus.RESOLVED)
+
+        # ----------------------------------------------------------------
+        # Step 5 — human-in-the-loop gate.
+        #
+        # Check whether the pipeline result is confident enough to
+        # auto-resolve or whether it should be routed to the NOC queue.
+        #
+        # Flagging criteria (ANY one is sufficient):
+        #   • sop_candidates  == 0          → NO_SOP_MATCH
+        #   • similar_tickets == 0          → NO_HISTORICAL_PRECEDENT
+        #   • confidence_score < 0.50       → LOW_CONFIDENCE
+        #   • fault_type == "unknown"       → UNKNOWN_FAULT_TYPE
+        # ----------------------------------------------------------------
+        sop_candidates_found  = len(ctx.sop_matches)
+        similar_tickets_found = len(ctx.similar_tickets)
+        fault_type_str = (
+            ticket.fault_type.value
+            if hasattr(ticket.fault_type, "value")
+            else str(ticket.fault_type)
+        )
+
+        should_flag, reasons = is_unresolvable(
+            confidence_score=decision.confidence_score,
+            sop_candidates_found=sop_candidates_found,
+            similar_tickets_found=similar_tickets_found,
+            fault_type=fault_type_str,
+        )
+
+        if should_flag:
+            reason_values = [r.value for r in reasons]
+            await repo.flag_pending_review(ticket_id, reason_values)
+            log.warning(
+                "Ticket %s flagged PENDING_REVIEW — reasons=%s "
+                "confidence=%.2f sop_candidates=%d similar_tickets=%d fault_type=%s",
+                ticket_id,
+                reason_values,
+                decision.confidence_score,
+                sop_candidates_found,
+                similar_tickets_found,
+                fault_type_str,
+            )
+        else:
+            await repo.update_status(ticket_id, TelcoTicketStatus.RESOLVED)
 
         log.info(
             "Pipeline complete — ticket=%s dispatch=%s confidence=%.2f "
-            "escalation=%s ranked_sops=%d short_circuit=%s",
+            "escalation=%s ranked_sops=%d short_circuit=%s pending_review=%s",
             ticket_id,
             decision.dispatch_mode.value,
             decision.confidence_score,
             decision.escalation_required,
             len(decision.ranked_sops),
             decision.short_circuited,
+            should_flag,
         )
 
     except Exception as exc:

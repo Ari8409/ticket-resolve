@@ -175,3 +175,65 @@ class MatchingEngine:
             resolved=resolved,
         )
         log.info("Indexed telco ticket %s (resolved=%s)", ticket_id, resolved)
+
+    async def index_raw_doc(
+        self,
+        doc_id: str,
+        embedding_text: str,
+        metadata: dict,
+    ) -> None:
+        """
+        Embed and upsert an arbitrary document with custom metadata.
+
+        Used by ResolutionFeedbackIndexer.index_chat_feedback() to store
+        positively-rated chat exchanges with feedback_source="chat" metadata
+        so they can be retrieved separately from ticket resolutions.
+        """
+        embedding = await self._embedder.embed_text(embedding_text)
+        await self._store._col.upsert(
+            ids=[doc_id],
+            embeddings=[embedding],
+            documents=[embedding_text],
+            metadatas=[metadata],
+        )
+        log.debug("Indexed raw doc %s into Chroma", doc_id)
+
+    async def find_similar_with_filter(
+        self,
+        query: str,
+        where: dict,
+        n_results: int = 3,
+    ) -> list[dict]:
+        """
+        Query Chroma with an explicit where-filter and return raw result dicts.
+
+        Used to retrieve chat feedback documents (where={"feedback_source": "chat"})
+        without contaminating the regular ticket similarity search paths.
+        Falls back to empty list if the collection has no matching documents.
+        """
+        try:
+            embedding = await self._embedder.embed_text(query)
+            results = await self._store._col.query(
+                query_embeddings=[embedding],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"],
+            )
+            if not results or not results.get("ids") or not results["ids"][0]:
+                return []
+            ids       = results["ids"][0]
+            docs      = results.get("documents", [[]])[0]
+            metadatas = results.get("metadatas", [[]])[0]
+            distances = results.get("distances", [[]])[0]
+            return [
+                {
+                    "id":       ids[i],
+                    "document": docs[i] if i < len(docs) else "",
+                    "metadata": metadatas[i] if i < len(metadatas) else {},
+                    "score":    round(1.0 - distances[i], 4) if i < len(distances) else 0.0,
+                }
+                for i in range(len(ids))
+            ]
+        except Exception as exc:
+            log.warning("find_similar_with_filter failed (where=%s): %s", where, exc)
+            return []
