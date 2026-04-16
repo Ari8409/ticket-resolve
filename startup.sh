@@ -2,7 +2,7 @@
 # =============================================================================
 # startup.sh — R-16: NOC Platform Production Server
 #
-# Builds the React frontend then starts FastAPI on port 8000.
+# Builds the React frontend then starts FastAPI on port 8003.
 # A single process serves both the API (/api/v1/*) and the NOC dashboard UI.
 #
 # Usage:
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORT="${PORT:-8000}"
+PORT="${PORT:-8003}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 
 echo "============================================================"
@@ -39,10 +39,12 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
 
   cd "$REPO/frontend"
   npm install --prefer-offline --silent
-  npm run build
+
+  # Call vite directly — avoids Windows .bin\ PATH resolution issues with npm run build
+  node node_modules/vite/bin/vite.js build
 
   if [[ ! -f "$REPO/frontend/dist/index.html" ]]; then
-    echo "ERROR: Build succeeded but frontend/dist/index.html not found."
+    echo "ERROR: Build completed but frontend/dist/index.html not found."
     exit 1
   fi
 
@@ -75,7 +77,7 @@ echo "  API docs      : http://localhost:${PORT}/docs"
 echo "  Health        : http://localhost:${PORT}/api/v1/health"
 echo ""
 
-exec uvicorn app.main:app \
+exec python -m uvicorn app.main:app \
   --host 0.0.0.0 \
   --port "$PORT" \
   --loop asyncio
